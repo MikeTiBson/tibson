@@ -2,6 +2,10 @@
   "name": "tibson-web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "npm@11.7.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
