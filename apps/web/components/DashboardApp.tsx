@@ -394,12 +394,13 @@ function SoulboundWallets({ soulbound, contract }: { soulbound: SoulboundBundle;
 
 function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }) {
   const labels = holderBuckets.buckets.map((bucket) => bucket.label);
+  const latestByBucket = new Map(holderBuckets.latest.map((row) => [row.bucket, row]));
   const currentWalletData: Data[] = [{
     x: labels,
-    y: holderBuckets.latest.map((row) => row.wallets),
+    y: labels.map((label) => latestByBucket.get(label)?.wallets ?? 0),
     type: "bar",
     marker: { color: COLORS },
-    text: holderBuckets.latest.map((row) => fmtNumber(row.wallets)),
+    text: labels.map((label) => fmtNumber(latestByBucket.get(label)?.wallets ?? 0)),
     textposition: "outside",
     hovertemplate: "%{x}<br>%{y:,} wallets<extra></extra>",
   }];
@@ -415,10 +416,10 @@ function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }
   }));
   const currentDistribution: Data[] = [{
     x: labels,
-    y: holderBuckets.latest.map((row) => row.supplySharePct),
+    y: labels.map((label) => latestByBucket.get(label)?.supplySharePct ?? 0),
     type: "bar",
     marker: { color: COLORS },
-    text: holderBuckets.latest.map((row) => fmtPct(row.supplySharePct)),
+    text: labels.map((label) => fmtPct(latestByBucket.get(label)?.supplySharePct ?? 0)),
     textposition: "outside",
     hovertemplate: "%{x}<br>%{y:.1f}% of supply<extra></extra>",
   }];
@@ -438,7 +439,7 @@ function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }
       <section className="section" id="current-wallet-count">
         <h2>Current wallet count per bucket</h2>
         <div className="metric-grid"><Metric label="Wallet count" value={fmtNumber(holderBuckets.totalWallets)} /></div>
-        <Plot data={currentWalletData} layout={{ height: 280, showlegend: false }} className="compact-chart" />
+        <Plot data={currentWalletData} layout={{ height: 280, showlegend: false, xaxis: { type: "category" } as Partial<Layout["xaxis"]> }} className="compact-chart" />
         <p className="caption">Addresses with a current TIBBIR balance, grouped by wallet size.</p>
       </section>
       <section className="section" id="wallet-count-history">
@@ -447,7 +448,16 @@ function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }
       </section>
       <section className="section" id="current-holder-distribution">
         <h2>Current holder distribution</h2>
-        <Plot data={currentDistribution} layout={{ height: 280, showlegend: false, yaxis: { ticksuffix: "%", range: [0, 100] } as Partial<Layout["yaxis"]> }} className="compact-chart" />
+        <Plot
+          data={currentDistribution}
+          layout={{
+            height: 280,
+            showlegend: false,
+            xaxis: { type: "category" } as Partial<Layout["xaxis"]>,
+            yaxis: { ticksuffix: "%", range: [0, 100] } as Partial<Layout["yaxis"]>,
+          }}
+          className="compact-chart"
+        />
         <p className="caption">Share of current TIBBIR supply held by wallets in each balance bucket.</p>
       </section>
       <section className="section" id="holder-distribution-history">
