@@ -34,7 +34,14 @@ const CHAD_COLORS = ["#34d399", "#22d3ee", "#6366f1"];
 async function fetchBundle<T>(name: string): Promise<T> {
   const response = await fetch(`/api/dashboard/${name}`);
   if (!response.ok) {
-    throw new Error(`Could not load ${name}: ${response.status}`);
+    let detail = "";
+    try {
+      const body = await response.json();
+      detail = body?.error ? ` - ${body.error}` : "";
+    } catch {
+      // Keep the compact status-only message if the API did not return JSON.
+    }
+    throw new Error(`Could not load ${name}: ${response.status}${detail}`);
   }
   return response.json();
 }
