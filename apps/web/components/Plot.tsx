@@ -25,31 +25,40 @@ const baseLayout: Partial<Layout> = {
   dragmode: false,
   paper_bgcolor: "rgba(0,0,0,0)",
   plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#f8fafc", family: "Inter, sans-serif" },
+  font: { color: "#fff7e8", family: "Inter, sans-serif", size: 14 },
   margin: { t: 22, r: 12, b: 68, l: 42 },
   legend: {
     orientation: "h",
     x: 0,
     y: -0.18,
-    font: { size: 13 },
+    font: { size: 14 },
   },
   xaxis: {
-    gridcolor: "rgba(248,250,252,0.10)",
-    zerolinecolor: "rgba(248,250,252,0.16)",
+    showgrid: false,
+    zeroline: false,
+    tickfont: { size: 13 },
   },
   yaxis: {
-    gridcolor: "rgba(248,250,252,0.14)",
-    zerolinecolor: "rgba(248,250,252,0.16)",
+    showgrid: false,
+    zeroline: false,
+    tickfont: { size: 13 },
   },
 };
 
 export function Plot({ data, layout, className = "chart" }: { data: Data[]; layout?: Partial<Layout>; className?: string }) {
+  const mergedLayout = {
+    ...baseLayout,
+    ...layout,
+    xaxis: { ...baseLayout.xaxis, ...layout?.xaxis },
+    yaxis: { ...baseLayout.yaxis, ...layout?.yaxis },
+  };
+
   return (
     <Plotly
       className={className}
       config={config}
       data={data}
-      layout={{ ...baseLayout, ...layout }}
+      layout={mergedLayout}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
     />

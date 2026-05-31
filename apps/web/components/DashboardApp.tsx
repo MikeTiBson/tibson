@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import type { Data, Layout } from "plotly.js";
 import { Plot } from "./Plot";
-import { basescanTokenUrl, fmtNumber, fmtPct, fmtUsd, shortAddress } from "@/lib/format";
+import { basescanTokenUrl, fmtNumber, fmtPct, shortAddress } from "@/lib/format";
 import type {
   ChadBundle,
   DatasetDetailsBundle,
@@ -28,8 +28,18 @@ type DashboardData = {
   datasetDetails: DatasetDetailsBundle;
 };
 
-const COLORS = ["#6366f1", "#22d3ee", "#34d399", "#fbbf24", "#f87171"];
-const CHAD_COLORS = ["#34d399", "#22d3ee", "#6366f1"];
+type DashboardView = "price" | "chad" | "soulbound" | "wallet-count" | "holder-distribution" | "wallets-vs-supply";
+
+const COLORS = ["#a7df00", "#f0a72a", "#c87316", "#8d3f08", "#e85d2a"];
+const CHAD_COLORS = ["#a7df00", "#f0a72a", "#c87316"];
+const VIEW_OPTIONS: Array<{ id: DashboardView; label: string }> = [
+  { id: "price", label: "Price" },
+  { id: "chad", label: "Chad wallets" },
+  { id: "soulbound", label: "Soulbound wallets" },
+  { id: "wallet-count", label: "Wallet count" },
+  { id: "holder-distribution", label: "Holder distribution" },
+  { id: "wallets-vs-supply", label: "Wallets vs supply" },
+];
 
 async function fetchBundle<T>(name: string): Promise<T> {
   const response = await fetch(`/api/dashboard/${name}`);
@@ -113,6 +123,27 @@ function ProgressValue({ value }: { value: number }) {
   );
 }
 
+function ChartNavigation({ activeView, onChange }: { activeView: DashboardView; onChange: (view: DashboardView) => void }) {
+  return (
+    <nav className="view-nav" aria-label="Dashboard views">
+      <div className="view-tabs" role="tablist">
+        {VIEW_OPTIONS.map((view) => (
+          <button
+            aria-selected={activeView === view.id}
+            className={`tab-button view-tab ${activeView === view.id ? "active" : ""}`}
+            key={view.id}
+            onClick={() => onChange(view.id)}
+            role="tab"
+            type="button"
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 function nearestPrice(price: PriceBundle, date: string) {
   const target = new Date(date).getTime();
   let best = price.history[0];
@@ -157,8 +188,8 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
       type: "scatter",
       mode: "lines",
       name: "Price",
-      line: { color: "#22d3ee", width: 2 },
-      hovertemplate: "%{x|%b %d, %Y}<br>$%{y:.6f}<extra>TIBBIR</extra>",
+      line: { color: "#a7df00", width: 2 },
+      hovertemplate: "%{x|%b %d, %Y}<br>$%{y:.6f}<extra></extra>",
     },
   ];
 
@@ -171,7 +202,7 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
         type: "scatter",
         mode: "markers",
         name: "Major events",
-        marker: { color: "#34d399", size: 20 },
+        marker: { color: "#18ff00", line: { color: "#1f241a", width: 4 }, size: 20 },
         hovertemplate: "%{x|%b %d, %Y}<br><b>%{text}</b><extra></extra>",
       },
       {
@@ -181,7 +212,7 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
         type: "scatter",
         mode: "markers",
         name: "Other",
-        marker: { color: "#fbbf24", size: 15 },
+        marker: { color: "#31ff8f", size: 15 },
         hovertemplate: "%{x|%b %d, %Y}<br><b>%{text}</b><extra></extra>",
       },
     );
@@ -190,23 +221,74 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
   return (
     <section className="section">
       <h2>Price, key events & bonus lore</h2>
-      <div className="link-row" aria-label="Price context">
+      <div className="radio-group" aria-label="Price context">
         {(["Off", "Key events", "Bonus lore"] as const).map((option) => (
-          <button className={`radio-button ${mode === option ? "active" : ""}`} key={option} onClick={() => setMode(option)}>
+          <label className={`radio-button ${mode === option ? "active" : ""}`} key={option}>
+            <input
+              checked={mode === option}
+              name="price-context"
+              onChange={() => setMode(option)}
+              type="radio"
+              value={option}
+            />
             {option}
-          </button>
+          </label>
         ))}
-      </div>
-      <div className="metric-grid">
-        <Metric label="Latest daily price" value={fmtUsd(price.latest?.priceUsd)} />
       </div>
       <Plot
         data={data}
         layout={{
+          annotations: mode === "Bonus lore" ? [{
+            font: { color: "#f0a72a", size: 12 },
+            showarrow: false,
+            text: "<b>No dates zone</b>",
+            x: "2025-06-22",
+            xanchor: "left",
+            xref: "x",
+            y: 1,
+            yanchor: "top",
+            yref: "paper",
+          }] : [],
           height: 400,
+          images: mode === "Key events" ? major.map((marker) => ({
+            layer: "above",
+            opacity: 1,
+            sizex: 1000 * 60 * 60 * 24 * 14,
+            sizey: 0.035,
+            sizing: "contain",
+            source: "/ribbit-coin.png",
+            x: marker.date,
+            xanchor: "center",
+            xref: "x",
+            y: marker.y,
+            yanchor: "middle",
+            yref: "y",
+          })) : [],
+          shapes: mode === "Bonus lore" ? [{
+            fillcolor: "rgba(33, 24, 13, 0.58)",
+            layer: "below",
+            line: { width: 0 },
+            type: "rect",
+            x0: "2025-06-22",
+            x1: "2025-11-11",
+            xref: "x",
+            y0: 0,
+            y1: 1,
+            yref: "paper",
+          }] : [],
+          showlegend: false,
           yaxis: { tickprefix: "$", tickformat: ".2f" } as Partial<Layout["yaxis"]>,
         }}
       />
+      <div className="chart-legend" aria-label="Price chart legend">
+        <span className="legend-item"><span className="legend-line" />Price</span>
+        {mode === "Key events" && (
+          <>
+            <span className="legend-item"><Image alt="" className="legend-icon" src="/ribbit-coin.png" width={18} height={18} />Major events</span>
+            <span className="legend-item"><span className="legend-dot legend-dot-other" />Other</span>
+          </>
+        )}
+      </div>
       {mode !== "Off" && <PriceContextDetails mode={mode} context={context} />}
     </section>
   );
@@ -214,34 +296,63 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
 
 function PriceContextDetails({ mode, context }: { mode: "Key events" | "Bonus lore"; context: PriceContextBundle }) {
   const events = context.events.filter((event) => event.section === (mode === "Key events" ? "key" : "lore"));
-  const majorGroups = Array.from(new Set(events.filter((event) => event.tier === "major").map((event) => event.group)));
+  const eventSortKey = (event: PriceEvent) => `${event.date} ${event.time_utc || ""}`;
+  const renderLinkList = (links: PriceEvent["links"]) => {
+    if (!links?.length) return null;
+    return <ul>{links.map((link) => <li key={link.url}><a href={link.url} target="_blank">{link.label}</a></li>)}</ul>;
+  };
+  const majorGroups = Array.from(new Set(events.filter((event) => event.tier === "major").map((event) => event.group)))
+    .map((group) => {
+      const groupEvents = events
+        .filter((event) => event.group === group)
+        .sort((a, b) => eventSortKey(a).localeCompare(eventSortKey(b)));
+      return { group, groupEvents, sortKey: eventSortKey(groupEvents[0]) };
+    });
+  const keyTimeline = [
+    ...majorGroups.map((entry) => ({ type: "major" as const, sortKey: entry.sortKey, entry })),
+    ...events
+      .filter((event) => event.tier !== "major")
+      .map((event) => ({ type: "event" as const, sortKey: eventSortKey(event), event })),
+  ].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
   return (
     <details className="details">
       <summary>Price context details</summary>
       <div className="details-body">
         {mode === "Key events" ? (
           <>
-            {majorGroups.map((group) => {
-              const groupEvents = events.filter((event) => event.group === group);
+            {keyTimeline.map((item) => {
+              if (item.type === "event") {
+                const event = item.event;
+                return (
+                  <div className="timeline-item" key={event.title}>
+                    <strong>{event.date} - {event.title}</strong>
+                    {renderLinkList(event.links)}
+                  </div>
+                );
+              }
+
+              const { group, groupEvents } = item.entry;
               const titleDate = groupEvents[0]?.date;
               return (
                 <div className="timeline-item" key={group}>
                   <strong>{titleDate} - {group}</strong>
-                  <ul>
-                    {groupEvents.map((event) => (
-                      <li key={`${event.title}-${event.time_utc}`}>
-                        {event.time_utc || event.date} - {event.title} {event.links?.map((link) => <a key={link.url} href={link.url} target="_blank"> {link.label}</a>)}
-                      </li>
-                    ))}
-                  </ul>
+                  {groupEvents.length === 1 ? (
+                    renderLinkList(groupEvents[0].links)
+                  ) : (
+                    <ul>
+                      {groupEvents.map((event) => (
+                        <li key={`${event.title}-${event.time_utc || event.date}`}>
+                          {event.time_utc || event.date} | {event.links?.[0] ? (
+                            <a href={event.links[0].url} target="_blank">{event.title}</a>
+                          ) : event.title}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               );
             })}
-            {events.filter((event) => event.tier !== "major").map((event) => (
-              <div className="timeline-item" key={event.title}>
-                <strong>{event.date}</strong> - {event.title} {event.links?.map((link) => <a key={link.url} href={link.url} target="_blank"> {link.label}</a>)}
-              </div>
-            ))}
           </>
         ) : (
           <>
@@ -249,17 +360,29 @@ function PriceContextDetails({ mode, context }: { mode: "Key events" | "Bonus lo
               <div className="timeline-item" key={zone.title}>
                 <strong>{zone.title}</strong>
                 {zone.detail && <p>{zone.detail}</p>}
-                {zone.links?.map((link) => <p key={link.url}><a href={link.url} target="_blank">{link.label}</a></p>)}
+                {zone.links?.length ? (
+                  <ul>
+                    {zone.links.map((link) => <li key={link.url}><a href={link.url} target="_blank">{link.label}</a></li>)}
+                  </ul>
+                ) : null}
               </div>
             ))}
             {["Beeple x Tibbir", "Konami", "Other / Misc"].map((group) => {
-              const groupEvents = events.filter((event) => event.group === group);
+              const groupEvents = events
+                .filter((event) => event.group === group)
+                .sort((a, b) => eventSortKey(a).localeCompare(eventSortKey(b)) || a.title.localeCompare(b.title));
               if (!groupEvents.length) return null;
               return (
                 <div className="timeline-item" key={group}>
                   <strong>{group}</strong>
                   <ul>
-                    {groupEvents.map((event) => <li key={event.title}>{event.links?.[0] ? <a href={event.links[0].url} target="_blank">{event.title}</a> : event.title}</li>)}
+                    {group === "Konami" ? (
+                      groupEvents.flatMap((event) => event.links || []).map((link) => (
+                        <li key={link.url}><a href={link.url} target="_blank">{link.label}</a></li>
+                      ))
+                    ) : (
+                      groupEvents.map((event) => <li key={event.title}>{event.links?.[0] ? <a href={event.links[0].url} target="_blank">{event.title}</a> : event.title}</li>)
+                    )}
                   </ul>
                 </div>
               );
@@ -353,9 +476,9 @@ function SoulboundWallets({ soulbound, contract }: { soulbound: SoulboundBundle;
     type: "scatter",
     mode: "lines",
     name: "Soulbound wallets",
-    line: { color: "#34d399", width: 2 },
+    line: { color: "#a7df00", width: 2 },
     fill: "tozeroy",
-    fillcolor: "rgba(52,211,153,0.28)",
+    fillcolor: "rgba(167,223,0,0.24)",
     customdata: soulbound.history.map((row) => Number(row.pct_total_supply)),
     hovertemplate: "%{x|%b %d, %Y}<br>%{customdata:.2f}% of supply<extra>Soulbound wallets</extra>",
   }];
@@ -392,7 +515,7 @@ function SoulboundWallets({ soulbound, contract }: { soulbound: SoulboundBundle;
   );
 }
 
-function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }) {
+function HolderBuckets({ holderBuckets, view }: { holderBuckets: HolderBucketsBundle; view: Extract<DashboardView, "wallet-count" | "holder-distribution" | "wallets-vs-supply"> }) {
   const labels = holderBuckets.buckets.map((bucket) => bucket.label);
   const latestByBucket = new Map(holderBuckets.latest.map((row) => [row.bucket, row]));
   const currentWalletData: Data[] = [{
@@ -434,20 +557,23 @@ function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }
     fillcolor: COLORS[idx],
   }));
 
-  return (
-    <>
-      <section className="section" id="current-wallet-count">
-        <h2>Current wallet count per bucket</h2>
+  if (view === "wallet-count") {
+    return (
+      <section className="section" id="wallet-count">
+        <h2>Wallet count</h2>
         <div className="metric-grid"><Metric label="Wallet count" value={fmtNumber(holderBuckets.totalWallets)} /></div>
         <Plot data={currentWalletData} layout={{ height: 280, showlegend: false, xaxis: { type: "category" } as Partial<Layout["xaxis"]> }} className="compact-chart" />
         <p className="caption">Addresses with a current TIBBIR balance, grouped by wallet size.</p>
-      </section>
-      <section className="section" id="wallet-count-history">
-        <h2>Wallet count history</h2>
+        <h3>History</h3>
         <Plot data={walletHistory} layout={{ height: 400 }} />
       </section>
-      <section className="section" id="current-holder-distribution">
-        <h2>Current holder distribution</h2>
+    );
+  }
+
+  if (view === "holder-distribution") {
+    return (
+      <section className="section" id="holder-distribution">
+        <h2>Holder distribution</h2>
         <Plot
           data={currentDistribution}
           layout={{
@@ -459,25 +585,26 @@ function HolderBuckets({ holderBuckets }: { holderBuckets: HolderBucketsBundle }
           className="compact-chart"
         />
         <p className="caption">Share of current TIBBIR supply held by wallets in each balance bucket.</p>
-      </section>
-      <section className="section" id="holder-distribution-history">
-        <h2>Holder distribution history</h2>
+        <h3>History</h3>
         <Plot data={distributionHistory} layout={{ height: 400, yaxis: { range: [0, 100] } as Partial<Layout["yaxis"]> }} />
       </section>
-      <section className="section" id="wallets-vs-supply">
-        <h2>Wallets vs supply by bucket</h2>
-        <Table
-          columns={["Bucket", "Wallets", "% of wallets", "% of supply"]}
-          rows={holderBuckets.latest.map((row) => ({
-            Bucket: row.bucket,
-            Wallets: fmtNumber(row.wallets),
-            "% of wallets": <ProgressValue value={row.walletSharePct} />,
-            "% of supply": <ProgressValue value={row.supplySharePct} />,
-          }))}
-        />
-        <p className="caption">Current wallet count and supply share shown side by side for each balance bucket.</p>
-      </section>
-    </>
+    );
+  }
+
+  return (
+    <section className="section" id="wallets-vs-supply">
+      <h2>Wallets vs supply by bucket</h2>
+      <Table
+        columns={["Bucket", "Wallets", "% of wallets", "% of supply"]}
+        rows={holderBuckets.latest.map((row) => ({
+          Bucket: row.bucket,
+          Wallets: fmtNumber(row.wallets),
+          "% of wallets": <ProgressValue value={row.walletSharePct} />,
+          "% of supply": <ProgressValue value={row.supplySharePct} />,
+        }))}
+      />
+      <p className="caption">Current wallet count and supply share shown side by side for each balance bucket.</p>
+    </section>
   );
 }
 
@@ -503,26 +630,9 @@ function WalletSearchTable<T extends Record<string, unknown>>({
   );
 }
 
-function ExploreLinks() {
-  const links = [
-    ["Chad wallets", "#chad-wallets"],
-    ["Soulbound wallets", "#soulbound-wallets"],
-    ["Current wallet count", "#current-wallet-count"],
-    ["Wallet count history", "#wallet-count-history"],
-    ["Current holder distribution", "#current-holder-distribution"],
-    ["Holder distribution history", "#holder-distribution-history"],
-    ["Wallets vs supply", "#wallets-vs-supply"],
-  ];
-  return (
-    <nav className="explore">
-      <div className="explore-title">Explore more</div>
-      <div className="link-row">{links.map(([label, href]) => <a className="pill-link" href={href} key={href}>{label}</a>)}</div>
-    </nav>
-  );
-}
-
 export function DashboardApp() {
   const { data, error } = useDashboardData();
+  const [activeView, setActiveView] = useState<DashboardView>("price");
   if (error) return <main className="page"><div className="status">{error}</div></main>;
   if (!data) return <main className="page"><div className="status">Loading dashboard data...</div></main>;
 
@@ -544,11 +654,13 @@ export function DashboardApp() {
         </ul>
         <p><a href="/dataset-details">Read more details about data coverage</a></p>
       </section>
-      <PriceStory price={data.price} context={data.priceContext} />
-      <ExploreLinks />
-      <ChadWallets chad={data.chad} contract={data.metadata.contractAddress} />
-      <SoulboundWallets soulbound={data.soulbound} contract={data.metadata.contractAddress} />
-      <HolderBuckets holderBuckets={data.holderBuckets} />
+      <ChartNavigation activeView={activeView} onChange={setActiveView} />
+      {activeView === "price" && <PriceStory price={data.price} context={data.priceContext} />}
+      {activeView === "chad" && <ChadWallets chad={data.chad} contract={data.metadata.contractAddress} />}
+      {activeView === "soulbound" && <SoulboundWallets soulbound={data.soulbound} contract={data.metadata.contractAddress} />}
+      {(activeView === "wallet-count" || activeView === "holder-distribution" || activeView === "wallets-vs-supply") && (
+        <HolderBuckets holderBuckets={data.holderBuckets} view={activeView} />
+      )}
     </main>
   );
 }

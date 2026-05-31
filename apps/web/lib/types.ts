@@ -23,6 +23,7 @@ export type MetadataBundle = {
 export type PricePoint = {
   date: string;
   priceUsd: number;
+  source?: string | null;
 };
 
 export type PriceEvent = {

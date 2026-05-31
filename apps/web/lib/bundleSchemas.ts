@@ -21,8 +21,8 @@ const schemas = {
     }),
   }),
   price: z.object({
-    latest: z.object({ date: z.string(), priceUsd: z.number() }).nullable(),
-    history: z.array(z.object({ date: z.string(), priceUsd: z.number() })),
+    latest: z.object({ date: z.string(), priceUsd: z.number(), source: z.string().nullable().optional() }).nullable(),
+    history: z.array(z.object({ date: z.string(), priceUsd: z.number(), source: z.string().nullable().optional() })),
     sourceNote: z.array(z.string()),
   }),
   "price-context": z.object({
