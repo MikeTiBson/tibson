@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertBundleName, readDashboardBundle } from "@/lib/gcs";
+import { validateDashboardBundle } from "@/lib/bundleSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ bun
   try {
     const { bundle } = await params;
     assertBundleName(bundle);
-    const data = await readDashboardBundle(bundle);
+    const data = validateDashboardBundle(bundle, await readDashboardBundle(bundle));
     return NextResponse.json(data, {
       headers: {
         "Cache-Control": "s-maxage=600, stale-while-revalidate=300",
