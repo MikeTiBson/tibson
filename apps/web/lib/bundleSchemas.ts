@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { BundleName } from "./types";
 
 const looseRecord = z.record(z.string(), z.unknown());
-const numberOrString = z.union([z.number(), z.string()]);
+const numberOrString = z.union([z.number(), z.string(), z.null()]);
 const looseDataRow = z.record(z.string(), numberOrString);
 const linkSchema = z.object({
   label: z.string(),
