@@ -500,7 +500,7 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
       <div className="note-list">
         <strong>Inclusion criteria for wallets</strong><br />
         - current holdings are at least 90% of peak holdings<br />
-        - total sold / total bought is less than 20%
+        - total out / total in is less than 20%
       </div>
       <div className="metric-grid chad-metric-grid">
         <Metric label="Chad wallets" value={fmtNumber(chad.summary.wallets)} />
@@ -533,13 +533,13 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
           <WalletSearchTable
             rows={chad.wallets.filter((row) => String(row.cohort) === activeCohort)}
             contract={contract}
-            columns={["Wallet", "BaseScan", "Current / peak", "% of peak", "Sold / bought", "Avg coin age"]}
+            columns={["Wallet", "BaseScan", "Current / peak", "% of peak", "In / out", "Avg coin age"]}
             rowMapper={(row) => ({
               Wallet: shortAddress(String(row.wallet_address)),
               BaseScan: <a href={basescanTokenUrl(contract, String(row.wallet_address))} target="_blank">open</a>,
               "Current / peak": `${fmtNumber(Number(row.current_balance))} / ${fmtNumber(Number(row.peak_balance))}`,
               "% of peak": fmtPct(Number(row.retention_ratio) * 100),
-              "Sold / bought": fmtPct(Number(row.turnover_ratio) * 100),
+              "In / out": fmtPct(Number(row.turnover_ratio) * 100),
               "Avg coin age": `${fmtNumber(Number(row.avg_coin_age_days))}d`,
             })}
             searchKey="wallet_address"
@@ -563,10 +563,10 @@ function ChadSummaryTable({ chad, circulatingSupply }: { chad: ChadBundle; circu
       "% of supply": fmtPct(circulatingSupply > 0 ? (totalBalance / circulatingSupply) * 100 : 0, 2),
       "Avg coin age": `${fmtNumber(Number(row.avg_coin_age_days || 0))} days`,
       "% of peak": fmtPct(Number(row.avg_retention_ratio || 0) * 100),
-      "Sold / bought": fmtPct(Number(row.avg_turnover_ratio || 0) * 100),
+      "In / out": fmtPct(Number(row.avg_turnover_ratio || 0) * 100),
     };
   });
-  return <Table columns={["Cohort", "Wallets", "TIBBIR held", "% of supply", "Avg coin age", "% of peak", "Sold / bought"]} rows={rows} />;
+  return <Table columns={["Cohort", "Wallets", "TIBBIR held", "% of supply", "Avg coin age", "% of peak", "In / out"]} rows={rows} />;
 }
 
 function SoulboundWallets({ soulbound, contract, circulatingSupply }: { soulbound: SoulboundBundle; contract: string; circulatingSupply: number }) {

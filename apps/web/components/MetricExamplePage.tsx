@@ -11,21 +11,17 @@ async function fetchBundle<T>(name: string): Promise<T> {
   return response.json();
 }
 
-function InfoTooltip({ items }: { items: string[] }) {
+function TableScrollTip() {
   return (
-    <div className="chart-note">
-      <span
-        aria-label={items.join(" ")}
-        className="info-tip info-tip-rich"
-        role="img"
-        tabIndex={0}
-      >
-        i
-        <span className="info-tip-panel" role="tooltip">
-          {items.map((item) => <span key={item}>- {item}</span>)}
-        </span>
-      </span>
-    </div>
+    <span
+      aria-label="This table scrolls sideways on small screens."
+      className="table-scroll-tip"
+      data-tooltip="This table scrolls sideways on small screens."
+      role="img"
+      tabIndex={0}
+    >
+      i
+    </span>
   );
 }
 
@@ -58,7 +54,7 @@ export function MetricExamplePage() {
         <h2>Inclusion criterias</h2>
         <ul className="note-list">
           <li>Current holdings are at least 90% of peak holdings: {"\u2713"}</li>
-          <li>Total sold / total bought is less than 20%: {"\u2713"}</li>
+          <li>Total out / total in is less than 20%: {"\u2713"}</li>
           <li><strong>Current balance</strong> is what the wallet still holds at the frozen timestamp.</li>
           <li><strong>Peak balance</strong> is the wallet&apos;s highest recorded balance.</li>
         </ul>
@@ -72,29 +68,31 @@ export function MetricExamplePage() {
         </div>
       </section>
       <section className="section">
-        <h2>Sold / bought</h2>
+        <h2>In / out</h2>
         <div className="metric-grid">
           <div className="metric"><div className="metric-label">Total in</div><div className="metric-value">{fmtNumber(example.summary.totalIn)}</div></div>
           <div className="metric"><div className="metric-label">Total out</div><div className="metric-value">{fmtNumber(example.summary.totalOut)}</div></div>
-          <div className="metric"><div className="metric-label">Sold / bought</div><div className="metric-value">{fmtPct(example.summary.soldBought * 100)}</div></div>
+          <div className="metric"><div className="metric-label">In / out</div><div className="metric-value">{fmtPct(example.summary.soldBought * 100)}</div></div>
         </div>
       </section>
       <section className="section">
         <h2>Avg coin age</h2>
-        <p>Avg coin age is balance-weighted days held: sum(token amount x days held) / current balance.</p>
+        <ul className="note-list">
+          <li>Avg coin age is balance-weighted days held: sum(token amount x days held) / current balance.</li>
+          <li>When tokens leave the wallet, their accumulated coin-days are destroyed for this wallet&apos;s age calculation.</li>
+        </ul>
         <div className="metric-grid">
           <div className="metric"><div className="metric-label">Avg coin age</div><div className="metric-value">{fmtNumber(example.summary.avgCoinAgeDays, 1)} days</div></div>
         </div>
       </section>
       <section className="section">
         <h2>Event-by-event replay</h2>
-        <InfoTooltip
-          items={[
-            "The table stops at the last wallet event; age keeps accumulating until the frozen timestamp, adding about 7 more days.",
-            "On small screens, the replay table scrolls sideways.",
-          ]}
-        />
+        <ul className="note-list">
+          <li>The table stops at the last wallet event; age keeps accumulating until the frozen timestamp, adding about 7 more days.</li>
+          <li>Transfers are categorized only as in or out; no further transfer-type labels are applied.</li>
+        </ul>
         <div className="table-scroll-shell">
+          <TableScrollTip />
           <div className="table-wrap">
             <table>
               <thead>
