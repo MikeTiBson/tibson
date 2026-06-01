@@ -54,6 +54,10 @@ input {
   margin-bottom: 1.5rem;
 }
 
+.brand-logo-only {
+  margin-bottom: 0.65rem;
+}
+
 .brand h1 {
   font-size: clamp(2.1rem, 7vw, 3.8rem);
   line-height: 0.95;
@@ -117,6 +121,22 @@ p {
   font-size: clamp(1.6rem, 5vw, 2.45rem);
   line-height: 1.1;
   white-space: nowrap;
+}
+
+.top-summary {
+  padding-top: 1rem;
+}
+
+.dataset-summary {
+  padding-top: 1rem;
+}
+
+.top-summary .metric-grid {
+  margin-top: 0;
+}
+
+.top-summary .metric-value {
+  font-size: clamp(1.45rem, 4vw, 2rem);
 }
 
 .note-list {

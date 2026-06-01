@@ -120,11 +120,10 @@ export function DatasetDetailsPage() {
   return (
     <main className="page">
       <p><Link href="/">Back to dashboard</Link></p>
-      <header className="brand">
-        <h1>tibson analytics</h1>
+      <header className="brand brand-logo-only">
         <Image src="/tibson.avif" alt="tibson" width={88} height={88} />
       </header>
-      <section className="section">
+      <section className="section dataset-summary">
         <h2>Contract & Supply</h2>
         <div className="supply-grid">
           <div className="supply-stack">

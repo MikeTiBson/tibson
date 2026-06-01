@@ -33,7 +33,7 @@ type DashboardView = "price" | "chad" | "soulbound" | "wallet-count" | "holder-d
 const COLORS = ["#a7df00", "#f0a72a", "#c87316", "#8d3f08", "#e85d2a"];
 const CHAD_COLORS = ["#a7df00", "#f0a72a", "#c87316"];
 const VIEW_OPTIONS: Array<{ id: DashboardView; label: string }> = [
-  { id: "price", label: "Price" },
+  { id: "price", label: "Price & context" },
   { id: "chad", label: "Chad wallets" },
   { id: "soulbound", label: "Soulbound wallets" },
   { id: "wallet-count", label: "Wallet count" },
@@ -220,7 +220,7 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
 
   return (
     <section className="section">
-      <h2>Price, key events & bonus lore</h2>
+      <h2>Price & context</h2>
       <div className="radio-group" aria-label="Price context">
         {(["Off", "Key events", "Bonus lore"] as const).map((option) => (
           <label className={`radio-button ${mode === option ? "active" : ""}`} key={option}>
@@ -639,17 +639,16 @@ export function DashboardApp() {
   const meta = data.metadata.metadata;
   return (
     <main className="page">
-      <header className="brand">
-        <h1>tibson analytics</h1>
+      <header className="brand brand-logo-only">
         <Image src="/tibson.avif" alt="tibson" width={88} height={88} priority />
       </header>
-      <section className="section">
+      <section className="section top-summary">
         <div className="metric-grid">
           <Metric label="Last updated" value={String(meta.last_updated_utc || "-").replace("T", " ").slice(0, 16) + " UTC"} />
           <Metric label="Latest block" value={fmtNumber(Number(meta.end_block || 0))} />
         </div>
         <ul className="note-list">
-          <li>Transaction data updates ~hourly</li>
+          <li>Transaction data updates ~every 4 hours</li>
           <li>Price data updates daily</li>
         </ul>
         <p><a href="/dataset-details">Read more details about data coverage</a></p>
