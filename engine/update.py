@@ -1496,7 +1496,7 @@ def build_dashboard_bundles():
     price["date"] = pd.to_datetime(price["date"])
     if not price.empty and price["date"].min() > pd.Timestamp("2025-01-11"):
         price = pd.concat([
-            pd.DataFrame([{"date": pd.Timestamp("2025-01-11"), "price_usd": 0.0}]),
+            pd.DataFrame([{"date": pd.Timestamp("2025-01-11"), "price_usd": 0.0, "source": "launch_baseline"}]),
             price,
         ], ignore_index=True)
     price = price.sort_values("date")
