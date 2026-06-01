@@ -99,6 +99,20 @@ function useDashboardData() {
   return { data, error };
 }
 
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const sync = () => setIsMobile(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric">
@@ -106,11 +120,6 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="metric-value">{value}</div>
     </div>
   );
-}
-
-function fmtMillions(value: number | null | undefined, digits = 2) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return fmtNumber(value / 1_000_000, digits);
 }
 
 function bucketColor(label: string) {
@@ -123,17 +132,28 @@ function bucketFillColor(label: string) {
 
 function Table({ columns, rows }: { columns: string[]; rows: Array<Record<string, React.ReactNode>> }) {
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((row, idx) => (
-            <tr key={idx}>{columns.map((column) => <td key={column}>{row[column]}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="table-scroll-shell">
+      <span
+        aria-label="This table scrolls sideways on small screens."
+        className="table-scroll-tip"
+        data-tooltip="This table scrolls sideways on small screens."
+        role="img"
+        tabIndex={0}
+      >
+        i
+      </span>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>{columns.map((column) => <td key={column}>{row[column]}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -219,9 +239,13 @@ function groupedPriceMarkers(price: PriceBundle, events: PriceEvent[]) {
 
 function PriceStory({ price, context }: { price: PriceBundle; context: PriceContextBundle }) {
   const [mode, setMode] = useState<"Off" | "Key events" | "Bonus lore">("Key events");
+  const isMobile = useIsMobile();
   const markers = useMemo(() => groupedPriceMarkers(price, context.events), [price, context.events]);
   const major = markers.filter((marker) => marker.tier === "major");
   const other = markers.filter((marker) => marker.tier !== "major");
+  const majorCoinSize = isMobile
+    ? { x: 1000 * 60 * 60 * 24 * 30, y: 0.075 }
+    : { x: 1000 * 60 * 60 * 24 * 14, y: 0.035 };
 
   const data: Data[] = [
     {
@@ -244,7 +268,12 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
         type: "scatter",
         mode: "markers",
         name: "Major events",
-        marker: { color: "#18ff00", line: { color: "#1f241a", width: 4 }, size: 20 },
+        marker: {
+          color: "rgba(0,0,0,0)",
+          line: { color: "rgba(0,0,0,0)", width: 0 },
+          opacity: 0,
+          size: 20,
+        },
         hovertemplate: "%{x|%b %d, %Y}<br><b>%{text}</b><extra></extra>",
       },
       {
@@ -291,12 +320,12 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
             yanchor: "top",
             yref: "paper",
           }] : [],
-          height: 400,
+          height: isMobile ? 320 : 400,
           images: mode === "Key events" ? major.map((marker) => ({
             layer: "above",
             opacity: 1,
-            sizex: 1000 * 60 * 60 * 24 * 14,
-            sizey: 0.035,
+            sizex: majorCoinSize.x,
+            sizey: majorCoinSize.y,
             sizing: "contain",
             source: "/ribbit-coin.png",
             x: marker.date,
@@ -361,6 +390,11 @@ function PriceContextDetails({ mode, context }: { mode: "Key events" | "Bonus lo
     <details className="details">
       <summary>Price context details</summary>
       <div className="details-body">
+        <p className="details-note">
+          {mode === "Key events"
+            ? "Selected context only; this timeline does not cover every TIBBIR-related event."
+            : "Selected bonus lore only; this list does not try to capture every community reference."}
+        </p>
         {mode === "Key events" ? (
           <>
             {keyTimeline.map((item) => {
@@ -384,10 +418,15 @@ function PriceContextDetails({ mode, context }: { mode: "Key events" | "Bonus lo
                   ) : (
                     <ul>
                       {groupEvents.map((event) => (
-                        <li key={`${event.title}-${event.time_utc || event.date}`}>
-                          {event.time_utc || event.date} | {event.links?.[0] ? (
-                            <a href={event.links[0].url} target="_blank">{event.title}</a>
-                          ) : event.title}
+                        <li className="timeline-row" key={`${event.title}-${event.time_utc || event.date}`}>
+                          <span className="timeline-row-content">
+                            <span className="timeline-time">{event.time_utc || event.date}</span>
+                            <span className="timeline-title">
+                              {event.links?.[0] ? (
+                                <a href={event.links[0].url} target="_blank">{event.title}</a>
+                              ) : event.title}
+                            </span>
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -465,11 +504,11 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
       </div>
       <div className="metric-grid chad-metric-grid">
         <Metric label="Chad wallets" value={fmtNumber(chad.summary.wallets)} />
-        <Metric label="TIBBIR held (M)" value={fmtMillions(chad.summary.tibbirHeld)} />
-        <Metric label="Share of circulating supply" value={fmtPct(supplyShare, 2)} />
+        <Metric label="TIBBIR held" value={fmtNumber(chad.summary.tibbirHeld)} />
+        <Metric label="Share of supply" value={fmtPct(supplyShare, 2)} />
         <Metric label="Avg coin age" value={`${fmtNumber(chad.summary.avgCoinAgeDays)} days`} />
       </div>
-      <InfoTooltip text={"- Wallets qualify based on their current status; their past holdings are then shown over time.\n- Historical holdings are grouped by each wallet's current cohort."} />
+      <InfoTooltip text={"- Wallets qualify based on their current status; their past holdings are then shown over time.\n- Historical holdings are grouped by each wallet's current cohort.\n- Supply share uses circulating supply, excluding burned and dead-address TIBBIR."} />
       <Plot data={data} layout={{ height: 400, hovermode: "x unified", yaxis: { ticksuffix: "M" } }} />
       <ChadSummaryTable chad={chad} circulatingSupply={circulatingSupply} />
       <details className="details">
@@ -494,15 +533,14 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
           <WalletSearchTable
             rows={chad.wallets.filter((row) => String(row.cohort) === activeCohort)}
             contract={contract}
-            columns={["Wallet", "BaseScan", "Current", "Peak", "% of peak", "Sold / bought", "Age"]}
+            columns={["Wallet", "BaseScan", "Current / peak", "% of peak", "Sold / bought", "Avg coin age"]}
             rowMapper={(row) => ({
               Wallet: shortAddress(String(row.wallet_address)),
               BaseScan: <a href={basescanTokenUrl(contract, String(row.wallet_address))} target="_blank">open</a>,
-              Current: fmtNumber(Number(row.current_balance)),
-              Peak: fmtNumber(Number(row.peak_balance)),
+              "Current / peak": `${fmtNumber(Number(row.current_balance))} / ${fmtNumber(Number(row.peak_balance))}`,
               "% of peak": fmtPct(Number(row.retention_ratio) * 100),
               "Sold / bought": fmtPct(Number(row.turnover_ratio) * 100),
-              Age: `${fmtNumber(Number(row.avg_coin_age_days))}d`,
+              "Avg coin age": `${fmtNumber(Number(row.avg_coin_age_days))}d`,
             })}
             searchKey="wallet_address"
           />
@@ -549,9 +587,9 @@ function SoulboundWallets({ soulbound, contract, circulatingSupply }: { soulboun
   return (
     <section className="section" id="soulbound-wallets">
       <h2>Soulbound wallets</h2>
-      <div className="metric-grid">
+      <div className="metric-grid soulbound-metric-grid">
         <Metric label="TIBBIR held" value={fmtNumber(Number(summary.total_balance || 0))} />
-        <Metric label="Share of circulating supply" value={fmtPct(supplyShare, 2)} />
+        <Metric label="Share of supply" value={fmtPct(supplyShare, 2)} />
         <Metric label="TIBBIR holders" value={`${fmtNumber(Number(summary.holder_count || 0))} / ${fmtNumber(Number(summary.soulbound_address_count || 0))}`} />
       </div>
       <InfoTooltip text="- The chart tracks current and historical TIBBIR balances for wallets holding a soulbound NFT." />

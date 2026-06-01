@@ -24,8 +24,23 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function basescanAddressUrl(address: string) {
-  return `https://basescan.org/address/${address}`;
+function TableScrollTip() {
+  return (
+    <span
+      aria-label="This table scrolls sideways on small screens."
+      className="table-scroll-tip"
+      data-tooltip="This table scrolls sideways on small screens."
+      role="img"
+      tabIndex={0}
+    >
+      i
+    </span>
+  );
+}
+
+function basescanTokenHolderUrl(contract: string, address?: string) {
+  const base = `https://basescan.org/token/${contract}`;
+  return address ? `${base}?a=${address}` : base;
 }
 
 function basescanTxUrl(txHash: string) {
@@ -42,11 +57,11 @@ function priceSourceLabel(date: string, source?: string | null) {
   return "Launch baseline";
 }
 
-function SupplyAddress({ label, address }: { label: string; address: string }) {
+function SupplyAddress({ label, address, href }: { label: string; address: string; href: string }) {
   return (
     <div className="supply-item">
       <div className="supply-label">{label}</div>
-      <a className="address-link external-link" href={basescanAddressUrl(address)} target="_blank" aria-label={`${label} on BaseScan`}>
+      <a className="address-link external-link" href={href} target="_blank" aria-label={`${label} on BaseScan`}>
         {address}
       </a>
     </div>
@@ -127,9 +142,9 @@ export function DatasetDetailsPage() {
         <h2>Contract & Supply</h2>
         <div className="supply-grid">
           <div className="supply-stack">
-            <SupplyAddress label="Contract" address={details.contractAddress} />
-            <SupplyAddress label="Burn address" address={ZERO_ADDRESS} />
-            <SupplyAddress label="Dead address" address={DEAD_ADDRESS} />
+            <SupplyAddress label="Token" address={details.contractAddress} href={basescanTokenHolderUrl(details.contractAddress)} />
+            <SupplyAddress label="Burn address" address={ZERO_ADDRESS} href={basescanTokenHolderUrl(details.contractAddress, ZERO_ADDRESS)} />
+            <SupplyAddress label="Dead address" address={DEAD_ADDRESS} href={basescanTokenHolderUrl(details.contractAddress, DEAD_ADDRESS)} />
           </div>
           <div className="supply-stack">
             <SupplyValue label="Total initial supply" value={totalSupply} />
@@ -186,17 +201,20 @@ export function DatasetDetailsPage() {
               <>
                 <input className="search" value={walletQuery} onChange={(event) => setWalletQuery(event.target.value)} placeholder="Search wallet" />
                 {normalizedWalletQuery ? (
-                  <div className="table-wrap scroll-table">
-                    <table>
-                      <thead><tr><th>Wallet</th><th>BaseScan</th><th>TIBBIR held</th></tr></thead>
-                      <tbody>{walletRows.map((row) => (
-                        <tr key={row.address}>
-                          <td>{shortAddress(row.address)}</td>
-                          <td><a href={basescanTokenUrl(details.contractAddress, row.address)} target="_blank">open</a></td>
-                          <td>{fmtNumber(row.balance)}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
+                  <div className="table-scroll-shell">
+                    <TableScrollTip />
+                    <div className="table-wrap scroll-table">
+                      <table>
+                        <thead><tr><th>Wallet</th><th>BaseScan</th><th>TIBBIR held</th></tr></thead>
+                        <tbody>{walletRows.map((row) => (
+                          <tr key={row.address}>
+                            <td>{shortAddress(row.address)}</td>
+                            <td><a href={basescanTokenUrl(details.contractAddress, row.address)} target="_blank">open</a></td>
+                            <td>{fmtNumber(row.balance)}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : (
                   <p className="empty-state">Search for a wallet address to verify its current TIBBIR balance.</p>
@@ -205,17 +223,20 @@ export function DatasetDetailsPage() {
             ) : (
               <>
                 <p className="table-note">Showing last 100 transactions included in the data.</p>
-                <div className="table-wrap scroll-table">
-                <table className="transactions-table">
-                  <thead><tr><th>Timestamp</th><th>BaseScan</th><th>Amount</th></tr></thead>
-                  <tbody>{recentTransactionRows.map((row, idx) => (
-                    <tr key={idx}>
-                      <td>{String(row.timestamp || "")}</td>
-                      <td><a href={basescanTxUrl(String(row.tx_hash || ""))} target="_blank">open</a></td>
-                      <td>{fmtNumber(Number(row.amount || 0), 2)}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+                <div className="table-scroll-shell">
+                  <TableScrollTip />
+                  <div className="table-wrap scroll-table">
+                    <table className="transactions-table">
+                      <thead><tr><th>Timestamp</th><th>BaseScan</th><th>Amount</th></tr></thead>
+                      <tbody>{recentTransactionRows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td>{String(row.timestamp || "")}</td>
+                          <td><a href={basescanTxUrl(String(row.tx_hash || ""))} target="_blank">open</a></td>
+                          <td>{fmtNumber(Number(row.amount || 0), 2)}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             )}
@@ -228,17 +249,20 @@ export function DatasetDetailsPage() {
         <details className="details">
           <summary>Inspect raw price data</summary>
           <div className="details-body">
-            <div className="table-wrap scroll-table">
-              <table>
-                <thead><tr><th>Date</th><th>Price USD</th><th>Source</th></tr></thead>
-                <tbody>{price.history.map((row) => (
-                  <tr key={row.date}>
-                    <td>{row.date}</td>
-                    <td>{fmtNumber(row.priceUsd, 6)}</td>
-                    <td>{priceSourceLabel(row.date, row.source)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
+            <div className="table-scroll-shell">
+              <TableScrollTip />
+              <div className="table-wrap scroll-table">
+                <table>
+                  <thead><tr><th>Date</th><th>Price USD</th><th>Source</th></tr></thead>
+                  <tbody>{price.history.map((row) => (
+                    <tr key={row.date}>
+                      <td>{row.date}</td>
+                      <td>{fmtNumber(row.priceUsd, 6)}</td>
+                      <td>{priceSourceLabel(row.date, row.source)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             </div>
           </div>
         </details>

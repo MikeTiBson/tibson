@@ -11,6 +11,24 @@ async function fetchBundle<T>(name: string): Promise<T> {
   return response.json();
 }
 
+function InfoTooltip({ items }: { items: string[] }) {
+  return (
+    <div className="chart-note">
+      <span
+        aria-label={items.join(" ")}
+        className="info-tip info-tip-rich"
+        role="img"
+        tabIndex={0}
+      >
+        i
+        <span className="info-tip-panel" role="tooltip">
+          {items.map((item) => <span key={item}>- {item}</span>)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export function MetricExamplePage() {
   const [example, setExample] = useState<MetricExampleBundle | null>(null);
   const [metadata, setMetadata] = useState<MetadataBundle | null>(null);
@@ -33,7 +51,7 @@ export function MetricExamplePage() {
       <p><Link href="/">Back to dashboard</Link></p>
       <section className="section">
         <h2>Example - Chad metrics</h2>
-        <p><a href={basescanTokenUrl(metadata.contractAddress, example.wallet)} target="_blank">{example.wallet}</a></p>
+        <p><a className="external-link" href={basescanTokenUrl(metadata.contractAddress, example.wallet)} target="_blank">{example.wallet}</a></p>
         <p><strong>This worked example is time-frozen at {example.asOf.replace("T", " ").replace(":00Z", " UTC")}.</strong></p>
       </section>
       <section className="section">
@@ -44,6 +62,9 @@ export function MetricExamplePage() {
           <li><strong>Current balance</strong> is what the wallet still holds at the frozen timestamp.</li>
           <li><strong>Peak balance</strong> is the wallet&apos;s highest recorded balance.</li>
         </ul>
+      </section>
+      <section className="section">
+        <h2>Current / peak</h2>
         <div className="metric-grid">
           <div className="metric"><div className="metric-label">Current</div><div className="metric-value">{fmtNumber(example.summary.currentBalance)}</div></div>
           <div className="metric"><div className="metric-label">Peak</div><div className="metric-value">{fmtNumber(example.summary.peakBalance)}</div></div>
@@ -67,26 +88,34 @@ export function MetricExamplePage() {
       </section>
       <section className="section">
         <h2>Event-by-event replay</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Type</th><th>Amount</th><th>Days</th><th>Bal before</th><th>Age before</th><th>Bal after</th><th>Age after</th></tr>
-            </thead>
-            <tbody>
-              {example.rows.map((row, idx) => (
-                <tr key={idx}>
-                  <td>{row.date}</td>
-                  <td>{row.type}</td>
-                  <td>{fmtNumber(row.amount)}</td>
-                  <td>{fmtNumber(row.days, 1)}</td>
-                  <td>{fmtNumber(row.balanceBefore)}</td>
-                  <td>{fmtNumber(row.ageBefore, 1)}</td>
-                  <td>{fmtNumber(row.balanceAfter)}</td>
-                  <td>{fmtNumber(row.ageAfter, 1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <InfoTooltip
+          items={[
+            "The table stops at the last wallet event; age keeps accumulating until the frozen timestamp, adding about 7 more days.",
+            "On small screens, the replay table scrolls sideways.",
+          ]}
+        />
+        <div className="table-scroll-shell">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Type</th><th>Amount</th><th>Days</th><th>Bal before</th><th>Age before</th><th>Bal after</th><th>Age after</th></tr>
+              </thead>
+              <tbody>
+                {example.rows.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>{row.date}</td>
+                    <td>{row.type}</td>
+                    <td>{fmtNumber(row.amount)}</td>
+                    <td>{fmtNumber(row.days, 1)}</td>
+                    <td>{fmtNumber(row.balanceBefore)}</td>
+                    <td>{fmtNumber(row.ageBefore, 1)}</td>
+                    <td>{fmtNumber(row.balanceAfter)}</td>
+                    <td>{fmtNumber(row.ageAfter, 1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>

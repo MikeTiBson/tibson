@@ -106,7 +106,8 @@ p {
   margin: 1rem 0;
 }
 
-.chad-metric-grid {
+.chad-metric-grid,
+.soulbound-metric-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -197,6 +198,7 @@ p {
   content: "↗";
   font-size: 0.82em;
   line-height: 1;
+  margin-left: 0.28rem;
   text-decoration: none;
 }
 
@@ -350,7 +352,7 @@ p {
   font-size: 0.95rem;
   gap: 0.45rem;
   justify-content: flex-start;
-  margin: 1.25rem 0 0.25rem;
+  margin: 1.25rem 0 1rem;
 }
 
 .bucket-toggles {
@@ -436,6 +438,44 @@ p {
   display: block;
 }
 
+.info-tip-rich::after,
+.info-tip-rich:hover::after,
+.info-tip-rich:focus::after {
+  content: none;
+  display: none;
+}
+
+.info-tip-panel {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 247, 232, 0.58);
+  border-radius: 8px;
+  color: var(--text);
+  display: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  left: 0;
+  line-height: 1.45;
+  min-width: min(48rem, calc(100vw - 3rem));
+  padding: 0.75rem 0.9rem;
+  position: absolute;
+  text-align: left;
+  top: calc(100% + 0.5rem);
+  z-index: 5;
+}
+
+.info-tip-panel span {
+  display: block;
+}
+
+.info-tip-panel span + span {
+  margin-top: 0.25rem;
+}
+
+.info-tip-rich:hover .info-tip-panel,
+.info-tip-rich:focus .info-tip-panel {
+  display: block;
+}
+
 .details {
   border: 1px solid rgba(255, 247, 232, 0.58);
   border-radius: 8px;
@@ -452,6 +492,11 @@ p {
 
 .details-body {
   padding: 1rem;
+}
+
+.details-note {
+  color: var(--muted);
+  margin: 0 0 1rem;
 }
 
 .code-heading {
@@ -497,6 +542,37 @@ p {
 .timeline-item:first-child {
   border-top: 0;
   padding-top: 0;
+}
+
+.timeline-item li {
+  margin: 0.35rem 0;
+}
+
+.timeline-row {
+  margin: 0.65rem 0;
+}
+
+.timeline-row-content {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.timeline-time {
+  color: var(--muted);
+  display: block;
+  font-size: 0.92rem;
+}
+
+.timeline-title {
+  display: block;
+}
+
+.table-scroll-shell {
+  position: relative;
+}
+
+.table-scroll-tip {
+  display: none;
 }
 
 .table-wrap {
@@ -616,8 +692,9 @@ td {
     grid-template-columns: 1fr;
   }
 
-  .chad-metric-grid {
-    grid-template-columns: 1fr;
+  .chad-metric-grid,
+  .soulbound-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .supply-grid {
@@ -634,6 +711,65 @@ td {
 
   .chart {
     min-height: 320px;
+  }
+
+  .details-body {
+    padding: 0.8rem;
+  }
+
+  .timeline-item {
+    padding: 0.85rem 0;
+  }
+
+  .table-scroll-tip {
+    align-items: center;
+    border: 1px solid rgba(255, 247, 232, 0.48);
+    border-radius: 999px;
+    color: var(--muted);
+    cursor: help;
+    display: inline-flex;
+    font-size: 0.82rem;
+    font-weight: 750;
+    height: 1.25rem;
+    justify-content: center;
+    line-height: 1;
+    margin: 0 0 0.65rem;
+    position: relative;
+    width: 1.25rem;
+  }
+
+  .table-scroll-tip::after {
+    background: var(--panel-2);
+    border: 1px solid rgba(255, 247, 232, 0.58);
+    border-radius: 8px;
+    color: var(--text);
+    content: attr(data-tooltip);
+    display: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    left: 0;
+    line-height: 1.35;
+    min-width: min(17rem, calc(100vw - 3rem));
+    padding: 0.6rem 0.75rem;
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    z-index: 7;
+  }
+
+  .table-scroll-tip:hover::after,
+  .table-scroll-tip:focus::after {
+    display: block;
+  }
+
+  .table-scroll-shell::after {
+    background: linear-gradient(90deg, rgba(60, 60, 57, 0), var(--bg));
+    bottom: 1px;
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    right: 1px;
+    top: 2.1rem;
+    width: 2.25rem;
   }
 
   table {
