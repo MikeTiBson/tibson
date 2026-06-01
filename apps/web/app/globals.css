@@ -106,6 +106,10 @@ p {
   margin: 1rem 0;
 }
 
+.chad-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .metric {
   min-width: 0;
 }
@@ -331,6 +335,107 @@ p {
   margin: 0.6rem 0 0;
 }
 
+.table-caption {
+  margin-bottom: 1rem;
+}
+
+.section-table {
+  margin-top: 2rem;
+}
+
+.chart-note {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.95rem;
+  gap: 0.45rem;
+  justify-content: flex-start;
+  margin: 1.25rem 0 0.25rem;
+}
+
+.bucket-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  margin: 0.9rem 0 0.2rem;
+}
+
+.filter-details {
+  border: 1px solid rgba(255, 247, 232, 0.38);
+  border-radius: 8px;
+  margin: 0.8rem 0 1rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.filter-details summary {
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.bucket-toggle {
+  align-items: center;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 1.08rem;
+  gap: 0.65rem;
+}
+
+.bucket-toggle input {
+  accent-color: var(--lime);
+  margin: 0;
+  transform: scale(1.35);
+  transform-origin: center;
+}
+
+.bucket-swatch {
+  border: 1px solid rgba(255, 247, 232, 0.35);
+  display: inline-block;
+  height: 1.7rem;
+  width: 1.7rem;
+}
+
+.info-tip {
+  align-items: center;
+  border: 1px solid rgba(255, 247, 232, 0.48);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: help;
+  display: inline-flex;
+  font-size: 0.95rem;
+  font-weight: 750;
+  height: 1.45rem;
+  justify-content: center;
+  line-height: 1;
+  position: relative;
+  width: 1.45rem;
+}
+
+.info-tip::after {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 247, 232, 0.58);
+  border-radius: 8px;
+  color: var(--text);
+  content: attr(data-tooltip);
+  display: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  left: 0;
+  line-height: 1.45;
+  min-width: min(48rem, calc(100vw - 3rem));
+  padding: 0.75rem 0.9rem;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  white-space: pre-line;
+  z-index: 5;
+}
+
+.info-tip:hover::after,
+.info-tip:focus::after {
+  display: block;
+}
+
 .details {
   border: 1px solid rgba(255, 247, 232, 0.58);
   border-radius: 8px;
@@ -403,6 +508,10 @@ p {
 .scroll-table {
   max-height: min(70vh, 46rem);
   overflow: auto;
+}
+
+.wallet-search-results {
+  max-height: min(72vh, 82rem);
 }
 
 table {
@@ -504,6 +613,10 @@ td {
   }
 
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chad-metric-grid {
     grid-template-columns: 1fr;
   }
 

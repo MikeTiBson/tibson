@@ -33,6 +33,11 @@ const baseLayout: Partial<Layout> = {
     y: -0.18,
     font: { size: 14 },
   },
+  hoverlabel: {
+    bgcolor: "#21180d",
+    bordercolor: "rgba(255,247,232,0.58)",
+    font: { color: "#fff7e8", family: "Inter, sans-serif", size: 13 },
+  },
   xaxis: {
     showgrid: false,
     zeroline: false,
