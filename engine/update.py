@@ -1601,9 +1601,6 @@ def build_dashboard_bundles():
         "dataset-details": {
             "contractAddress": config.CONTRACT_ADDRESS,
             "metadata": metadata,
-            "publicDataset": {
-                "status": "paused",
-            },
             "transactionNotes": [
                 f"Data covers Tibbir transactions on Base (via Alchemy) up to the latest safe block at the time of the last run (-{config.REORG_BUFFER} blocks for reorg safety).",
                 "Wallet balances, metrics and charts are derived from the full transaction history.",

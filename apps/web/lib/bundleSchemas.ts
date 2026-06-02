@@ -95,7 +95,6 @@ const schemas = {
   "dataset-details": z.object({
     contractAddress: z.string(),
     metadata: looseRecord,
-    publicDataset: z.record(z.string(), z.string()),
     transactionNotes: z.array(z.string()),
     priceNotes: z.array(z.string()),
   }),

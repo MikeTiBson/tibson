@@ -139,16 +139,6 @@ export function DatasetDetailsPage() {
         <h2>Transaction data</h2>
         <ul className="note-list">{details.transactionNotes.map((note) => <li key={note}>{note}</li>)}</ul>
         <details className="details">
-          <summary>Public dataset</summary>
-          <div className="details-body">
-            <p>Public dataset downloads are temporarily paused while Tibson verifies the R2 migration.</p>
-            <ul className="note-list">
-              <li>Dashboard views still use private server-side bundles.</li>
-              <li>Large public transaction files will return after a lower-cost storage path is in place.</li>
-            </ul>
-          </div>
-        </details>
-        <details className="details">
           <summary>Verify wallet balances and latest transactions</summary>
           <div className="details-body">
             <div className="metric-grid">

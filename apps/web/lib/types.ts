@@ -97,7 +97,6 @@ export type WalletVerificationBundle = {
 export type DatasetDetailsBundle = {
   contractAddress: string;
   metadata: Record<string, unknown>;
-  publicDataset: Record<string, string>;
   transactionNotes: string[];
   priceNotes: string[];
 };
