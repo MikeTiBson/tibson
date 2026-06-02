@@ -3,17 +3,17 @@ import pandas as pd
 import json
 import os
 import time
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
 import sys
 from pathlib import Path
 
-import gcsfs
-
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
+from engine.r2 import r2_exists, read_r2_bytes, read_r2_json, write_r2_bytes, write_r2_json
 from analytics.snapshot import (
     build_balance_snapshot,
     build_daily_holder_growth,
@@ -38,50 +38,53 @@ from analytics.chads import (
 
 
 # =====================================================
-# GCS / FILE HELPERS
+# R2 / FILE HELPERS
 # =====================================================
 
-_fs = None
-
-def _get_fs():
-    """Lazy-load GCS filesystem."""
-    global _fs
-    if _fs is None:
-        _fs = gcsfs.GCSFileSystem()
-    return _fs
-
-
-def _is_gcs_path(path):
-    """Check if path is a GCS URI."""
-    return isinstance(path, str) and path.startswith("gs://")
+def _is_r2_path(path):
+    """Check if path is an R2 URI."""
+    return isinstance(path, str) and path.startswith("r2://")
 
 
 def _read_json(path):
-    """Read JSON from local or GCS path."""
-    if _is_gcs_path(path):
-        with _get_fs().open(path, 'r') as f:
-            return json.load(f)
-    else:
-        with open(path) as f:
-            return json.load(f)
+    """Read JSON from local or R2 path."""
+    if _is_r2_path(path):
+        return read_r2_json(path)
+    with open(path) as f:
+        return json.load(f)
 
 
 def _write_json(data, path):
-    """Write JSON to local or GCS path."""
-    if _is_gcs_path(path):
-        with _get_fs().open(path, 'w') as f:
-            json.dump(data, f, indent=2)
-    else:
-        with open(path, 'w') as f:
-            json.dump(data, f, indent=2)
+    """Write JSON to local or R2 path."""
+    if _is_r2_path(path):
+        write_r2_json(data, path)
+        return
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def _read_parquet(path, **kwargs):
+    """Read Parquet from local or R2 path."""
+    if _is_r2_path(path):
+        return pd.read_parquet(BytesIO(read_r2_bytes(path)), **kwargs)
+    return pd.read_parquet(path, **kwargs)
+
+
+def _write_parquet(df, path):
+    """Write Parquet to local or R2 path."""
+    if _is_r2_path(path):
+        buffer = BytesIO()
+        df.to_parquet(buffer, index=False)
+        write_r2_bytes(buffer.getvalue(), path)
+        return
+    df.to_parquet(path, index=False)
 
 
 def _file_exists(path):
-    """Check if file exists (local or GCS)."""
-    if _is_gcs_path(path):
-        return _get_fs().exists(path)
-    else:
-        return Path(path).exists()
+    """Check if file exists locally or in R2."""
+    if _is_r2_path(path):
+        return r2_exists(path)
+    return Path(path).exists()
 
 
 def _resolve_repo_path(path):
@@ -287,7 +290,7 @@ def _read_token_decimals(token_address):
 
 def _get_daily_pair_blocks(start, end):
     pair_address = config.TIBBIR_VIRTUAL_PAIR_ADDRESS.lower()
-    transfers = pd.read_parquet(
+    transfers = _read_parquet(
         config.MASTER_FILE,
         columns=["block_number", "timestamp", "from_address", "to_address"],
     )
@@ -448,7 +451,7 @@ def rebuild_price_history(start=None, end=None):
     if prices.empty:
         return "No price history returned by Alchemy."
 
-    prices.to_parquet(config.PRICE_HISTORY_FILE, index=False)
+    _write_parquet(prices, config.PRICE_HISTORY_FILE)
     _write_price_history_metadata(prices)
     return (
         f"Rebuilt price history. {len(prices)} daily rows "
@@ -469,7 +472,7 @@ def update_price_history():
     if not _file_exists(config.PRICE_HISTORY_FILE):
         return rebuild_price_history()
 
-    existing = pd.read_parquet(config.PRICE_HISTORY_FILE)
+    existing = _read_parquet(config.PRICE_HISTORY_FILE)
     if existing.empty:
         return rebuild_price_history()
 
@@ -495,7 +498,7 @@ def update_price_history():
         .sort_values("date")
         .reset_index(drop=True)
     )
-    result.to_parquet(config.PRICE_HISTORY_FILE, index=False)
+    _write_parquet(result, config.PRICE_HISTORY_FILE)
     _write_price_history_metadata(result)
 
     return (
@@ -528,7 +531,7 @@ def build_soulbound_holder_supply():
     )
 
     print(f"Loading transfers for {len(holder_addresses):,} soulbound NFT holders...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
 
     metadata = _read_json(config.METADATA_FILE)
     total_supply = metadata.get("total_minted_supply")
@@ -547,7 +550,7 @@ def build_soulbound_holder_supply():
     if result.empty:
         return "No soulbound holder TIBBIR balances found."
 
-    result.to_parquet(config.SOULBOUND_HOLDER_SUPPLY_FILE, index=False)
+    _write_parquet(result, config.SOULBOUND_HOLDER_SUPPLY_FILE)
 
     latest = result.sort_values("date").iloc[-1]
     metadata["soulbound_nft_holder_count"] = int(len(holder_addresses))
@@ -580,9 +583,9 @@ def build_chad_cohorts():
         str: Status message
     """
     print("Loading wallet events, wallet summary, coin age snapshots, and known labels...")
-    wallet_events = pd.read_parquet(config.WALLET_EVENTS_FILE)
-    wallet_summary = pd.read_parquet(config.WALLET_SUMMARY_FILE)
-    coin_age_snapshots = pd.read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
+    wallet_events = _read_parquet(config.WALLET_EVENTS_FILE)
+    wallet_summary = _read_parquet(config.WALLET_SUMMARY_FILE)
+    coin_age_snapshots = _read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
     known_addresses = _load_chad_known_addresses()
 
     result = _build_chad_cohorts(
@@ -597,8 +600,8 @@ def build_chad_cohorts():
         coin_age_snapshots=coin_age_snapshots,
         known_addresses=known_addresses,
     )
-    result.to_parquet(config.CHAD_COHORTS_FILE, index=False)
-    wallets.to_parquet(config.CHAD_WALLETS_FILE, index=False)
+    _write_parquet(result, config.CHAD_COHORTS_FILE)
+    _write_parquet(wallets, config.CHAD_WALLETS_FILE)
 
     metadata = _read_json(config.METADATA_FILE)
     latest = result.sort_values("date").groupby("cohort", observed=False).tail(1) if not result.empty else result
@@ -723,7 +726,7 @@ def update_transfers():
     new_df = pd.DataFrame(new_rows)
 
     # Load master
-    master = pd.read_parquet(config.MASTER_FILE)
+    master = _read_parquet(config.MASTER_FILE)
 
     min_block_existing = master["block_number"].min()
     max_block_existing = master["block_number"].max()
@@ -780,7 +783,7 @@ def update_transfers():
     print("All invariants passed.")
 
     # Save master
-    master.to_parquet(config.MASTER_FILE, index=False)
+    _write_parquet(master, config.MASTER_FILE)
     print("Master updated. Total rows:", len(master))
 
     # Update metadata
@@ -793,7 +796,7 @@ def update_transfers():
 
     _write_json(metadata, config.METADATA_FILE)
 
-    master.tail(100).to_parquet(config.RECENT_TRANSFERS_FILE, index=False)
+    _write_parquet(master.tail(100), config.RECENT_TRANSFERS_FILE)
     print("Metadata updated.")
     return f"Update complete. {total_fetched} transfers added. Total rows: {len(master)}"
 
@@ -809,7 +812,7 @@ def update_daily_holder_growth(decimals=18):
     if not _file_exists(config.DAILY_HOLDER_GROWTH_FILE):
         return rebuild_daily_holder_growth(decimals)
 
-    existing = pd.read_parquet(config.DAILY_HOLDER_GROWTH_FILE)
+    existing = _read_parquet(config.DAILY_HOLDER_GROWTH_FILE)
 
     if existing.empty:
         return rebuild_daily_holder_growth(decimals)
@@ -820,7 +823,7 @@ def update_daily_holder_growth(decimals=18):
 
     existing = existing[existing["date"] < last_date]
 
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
     transfers["date"] = pd.to_datetime(transfers["timestamp"]).dt.date
 
     new_dates = sorted(transfers[transfers["date"] >= last_date]["date"].unique())
@@ -867,7 +870,7 @@ def update_daily_holder_growth(decimals=18):
         return "No new data to add."
 
     result = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True)
-    result.to_parquet(config.DAILY_HOLDER_GROWTH_FILE, index=False)
+    _write_parquet(result, config.DAILY_HOLDER_GROWTH_FILE)
 
     return f"Updated daily holder growth. Added {len(new_rows)} days. Total: {len(result)} days."
 
@@ -879,12 +882,12 @@ def update_daily_holder_growth(decimals=18):
 def build_wallet_snapshot():
     """
     Build a balance snapshot from the master transfer ledger and store it to
-    GCS (or local). Also writes summary stats into the existing metadata JSON.
+    R2 (or local). Also writes summary stats into the existing metadata JSON.
 
     Returns:
         str: Status message
     """
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
     snapshot = build_balance_snapshot(transfers)
     snapshot["balance"] = snapshot["raw_balance"] / 1e18
 
@@ -916,7 +919,7 @@ def build_wallet_snapshot():
     # raw_balance values exceed int64 range; store as string (same convention as raw_amount)
     snapshot["balance"] = snapshot["raw_balance"] / 1e18
     snapshot["raw_balance"] = snapshot["raw_balance"].astype(str)
-    snapshot.to_parquet(config.WALLET_SNAPSHOT_FILE, index=False)
+    _write_parquet(snapshot, config.WALLET_SNAPSHOT_FILE)
 
     metadata = _read_json(config.METADATA_FILE)
     metadata["wallet_snapshot_holder_count"] = holder_count
@@ -935,9 +938,9 @@ def rebuild_daily_holder_growth(decimals=18):
     Full rebuild of daily holder growth parquet with per-bucket wallet counts.
     """
     print("Rebuilding daily holder growth from scratch...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
     result = build_daily_holder_growth(transfers, decimals=decimals)
-    result.to_parquet(config.DAILY_HOLDER_GROWTH_FILE, index=False)
+    _write_parquet(result, config.DAILY_HOLDER_GROWTH_FILE)
     return f"Rebuilt daily holder growth. Total: {len(result)} days."
 
 
@@ -958,7 +961,7 @@ def update_daily_bucket_breakdown(decimals=18):
     if not _file_exists(config.DAILY_BUCKET_BREAKDOWN_FILE):
         return rebuild_daily_bucket_breakdown(decimals)
 
-    existing = pd.read_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE)
+    existing = _read_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE)
 
     if existing.empty:
         return rebuild_daily_bucket_breakdown(decimals)
@@ -969,7 +972,7 @@ def update_daily_bucket_breakdown(decimals=18):
 
     existing = existing[existing["date"] < last_date]
 
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
     transfers["date"] = pd.to_datetime(transfers["timestamp"]).dt.date
 
     new_dates = sorted(transfers[transfers["date"] >= last_date]["date"].unique())
@@ -1027,7 +1030,7 @@ def update_daily_bucket_breakdown(decimals=18):
         return "No new data to add."
 
     result = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True)
-    result.to_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE, index=False)
+    _write_parquet(result, config.DAILY_BUCKET_BREAKDOWN_FILE)
 
     return f"Updated daily bucket breakdown. Added {len(new_rows)} days. Total: {len(result)} days."
 
@@ -1044,9 +1047,9 @@ def rebuild_daily_bucket_breakdown(decimals=18):
         str: Status message
     """
     print("Rebuilding daily bucket breakdown from scratch...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
     result = build_daily_bucket_breakdown(transfers, decimals=decimals)
-    result.to_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE, index=False)
+    _write_parquet(result, config.DAILY_BUCKET_BREAKDOWN_FILE)
     return f"Rebuilt daily bucket breakdown. Total: {len(result)} days."
 
 
@@ -1062,13 +1065,13 @@ _EXCHANGE_TX_THRESHOLD = 1000  # wallets with tx_in AND tx_out above this are ex
 def build_wallet_activity():
     """
     Compute per-address balance and transaction counts from the master ledger
-    and save to GCS. Excludes only the zero address (minting source); the burn
+    and save to R2. Excludes only the zero address (minting source); the burn
     address (0x000...dead) is included so its balance is visible.
 
     Returns:
         str: Status message
     """
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
 
     transfers["_raw"] = transfers["raw_amount"].apply(int)
     tx_in  = transfers.groupby("to_address").size().rename("tx_in")
@@ -1092,7 +1095,7 @@ def build_wallet_activity():
         "tx_out":  tx_out.reindex(all_addresses, fill_value=0).values,
     }).sort_values("tx_in", ascending=False).reset_index(drop=True)
 
-    wa.to_parquet(config.WALLET_ACTIVITY_FILE, index=False)
+    _write_parquet(wa, config.WALLET_ACTIVITY_FILE)
     return f"Wallet activity built. {len(wa):,} addresses."
 
 
@@ -1113,8 +1116,8 @@ def rebuild_coin_age_snapshots():
         str: Status message
     """
     print("Loading transfers and wallet activity...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
-    wa        = pd.read_parquet(config.WALLET_ACTIVITY_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
+    wa        = _read_parquet(config.WALLET_ACTIVITY_FILE)
 
     excluded = (
         ((wa["tx_in"] > _EXCHANGE_TX_THRESHOLD) & (wa["tx_out"] > _EXCHANGE_TX_THRESHOLD)) |
@@ -1149,7 +1152,7 @@ def rebuild_coin_age_snapshots():
             print(f"  {i+1:,}/{len(wallets):,}  |  {elapsed/60:.1f} min elapsed  |  ~{remaining:.0f} min remaining")
 
     all_snapshots = pd.concat(results, ignore_index=True)
-    all_snapshots.to_parquet(config.COIN_AGE_SNAPSHOTS_FILE, index=False)
+    _write_parquet(all_snapshots, config.COIN_AGE_SNAPSHOTS_FILE)
 
     elapsed = time.time() - t0
     return (
@@ -1177,7 +1180,7 @@ def update_coin_age_snapshots():
         print("No existing snapshots — running full rebuild.")
         return rebuild_coin_age_snapshots()
 
-    existing  = pd.read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
+    existing  = _read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
     existing["week_start"] = pd.to_datetime(existing["week_start"]).dt.date
 
     last_week = existing["week_start"].max()
@@ -1196,8 +1199,8 @@ def update_coin_age_snapshots():
 
     print(f"Adding weeks from {last_week} to {current_boundary}")
 
-    transfers = pd.read_parquet(config.MASTER_FILE)
-    wa        = pd.read_parquet(config.WALLET_ACTIVITY_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
+    wa        = _read_parquet(config.WALLET_ACTIVITY_FILE)
     excluded  = (wa["tx_in"] > _EXCHANGE_TX_THRESHOLD) & (wa["tx_out"] > _EXCHANGE_TX_THRESHOLD)
     included  = set(wa[~excluded]["address"].tolist())
 
@@ -1249,7 +1252,7 @@ def update_coin_age_snapshots():
 
     parts = [trimmed] + rebuilt + ([projected] if not projected.empty else [])
     result = pd.concat(parts, ignore_index=True)
-    result.to_parquet(config.COIN_AGE_SNAPSHOTS_FILE, index=False)
+    _write_parquet(result, config.COIN_AGE_SNAPSHOTS_FILE)
 
     elapsed = time.time() - t0
     return (
@@ -1278,11 +1281,11 @@ def build_wallet_events():
         str: Status message
     """
     print("Loading master transfers...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
 
     print("Building wallet events...")
     events = _build_wallet_events(transfers)
-    events.to_parquet(config.WALLET_EVENTS_FILE, index=False)
+    _write_parquet(events, config.WALLET_EVENTS_FILE)
 
     metadata = _read_json(config.METADATA_FILE)
     metadata["wallet_events_row_count"]     = len(events)
@@ -1308,11 +1311,11 @@ def build_wallet_summary():
         str: Status message
     """
     print("Loading master transfers...")
-    transfers = pd.read_parquet(config.MASTER_FILE)
+    transfers = _read_parquet(config.MASTER_FILE)
 
     print("Building wallet summary...")
     summary = _build_wallet_summary(transfers)
-    summary.to_parquet(config.WALLET_SUMMARY_FILE, index=False)
+    _write_parquet(summary, config.WALLET_SUMMARY_FILE)
 
     return f"Wallet summary built. {len(summary):,} addresses."
 
@@ -1328,7 +1331,7 @@ def build_wallet_profiler(
 
     Filters out exchange/system wallets, replays balance history to compute
     peak_balance, then keeps only wallets that ever held >= peak_balance_threshold
-    tokens. Saves to GCS and writes summary stats to metadata.
+    tokens. Saves to R2 and writes summary stats to metadata.
 
     All thresholds are configurable via arguments (defaults match the spec).
 
@@ -1343,8 +1346,8 @@ def build_wallet_profiler(
     )
 
     print("Loading wallet_events and wallet_summary...")
-    wallet_events  = pd.read_parquet(config.WALLET_EVENTS_FILE)
-    wallet_summary = pd.read_parquet(config.WALLET_SUMMARY_FILE)
+    wallet_events  = _read_parquet(config.WALLET_EVENTS_FILE)
+    wallet_summary = _read_parquet(config.WALLET_SUMMARY_FILE)
 
     profiler, excluded = _build_wallet_profiler_table(wallet_events, wallet_summary, cfg)
 
@@ -1352,7 +1355,7 @@ def build_wallet_profiler(
     if not valid:
         raise RuntimeError("Profiler validation failed — see output above.")
 
-    profiler.to_parquet(config.WALLET_PROFILER_FILE, index=False)
+    _write_parquet(profiler, config.WALLET_PROFILER_FILE)
 
     excl_counts = excluded["exclusion_reason"].value_counts().to_dict()
 
@@ -1480,18 +1483,18 @@ def build_dashboard_bundles():
 
     Parquet remains the source of truth for analytics. These bundles are a
     serving layer so the web app can read small typed JSON payloads through
-    Vercel API routes without exposing GCS credentials to the browser.
+    Vercel API routes without exposing R2 credentials to the browser.
     """
     print("Loading dashboard source files...")
     metadata = _read_json(config.METADATA_FILE)
-    price = pd.read_parquet(config.PRICE_HISTORY_FILE)
-    holder_growth = pd.read_parquet(config.DAILY_HOLDER_GROWTH_FILE)
-    bucket_breakdown = pd.read_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE)
-    snapshot = pd.read_parquet(config.WALLET_SNAPSHOT_FILE)
-    recent_transfers = pd.read_parquet(config.RECENT_TRANSFERS_FILE)
-    chad_cohorts = pd.read_parquet(config.CHAD_COHORTS_FILE)
-    chad_wallets = pd.read_parquet(config.CHAD_WALLETS_FILE)
-    soulbound_supply = pd.read_parquet(config.SOULBOUND_HOLDER_SUPPLY_FILE)
+    price = _read_parquet(config.PRICE_HISTORY_FILE)
+    holder_growth = _read_parquet(config.DAILY_HOLDER_GROWTH_FILE)
+    bucket_breakdown = _read_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE)
+    snapshot = _read_parquet(config.WALLET_SNAPSHOT_FILE)
+    recent_transfers = _read_parquet(config.RECENT_TRANSFERS_FILE)
+    chad_cohorts = _read_parquet(config.CHAD_COHORTS_FILE)
+    chad_wallets = _read_parquet(config.CHAD_WALLETS_FILE)
+    soulbound_supply = _read_parquet(config.SOULBOUND_HOLDER_SUPPLY_FILE)
 
     price["date"] = pd.to_datetime(price["date"])
     if not price.empty and price["date"].min() > pd.Timestamp("2025-01-11"):
@@ -1599,11 +1602,7 @@ def build_dashboard_bundles():
             "contractAddress": config.CONTRACT_ADDRESS,
             "metadata": metadata,
             "publicDataset": {
-                "baseUrl": config.PUBLIC_BASE_URL,
-                "metadata": f"{config.PUBLIC_BASE_URL}/metadata.json",
-                "schema": f"{config.PUBLIC_BASE_URL}/schema.json",
-                "sampleTransactions": f"{config.PUBLIC_BASE_URL}/sample_transfers.parquet",
-                "fullTransactionHistory": f"{config.PUBLIC_BASE_URL}/transfers_master.parquet",
+                "status": "paused",
             },
             "transactionNotes": [
                 f"Data covers Tibbir transactions on Base (via Alchemy) up to the latest safe block at the time of the last run (-{config.REORG_BUFFER} blocks for reorg safety).",
@@ -1625,117 +1624,4 @@ def build_dashboard_bundles():
 
 
 def publish_public_dataset():
-    """
-    Copy tibbir_transfers_master.parquet to gs://<bucket>/public/ and make
-    it publicly readable, along with a metadata.json describing the dataset.
-
-    Called at the end of the scheduled pipeline to keep the public snapshot fresh.
-
-    Returns:
-        str: Status message with public URLs.
-    """
-    BASE_URL       = config.PUBLIC_BASE_URL
-    fs             = _get_fs()
-
-    COLUMN_SCHEMA = [
-        {"name": "event_id",         "dtype": "string",  "description": "Unique transaction event identifier (Alchemy uniqueId)"},
-        {"name": "block_number",     "dtype": "int64",   "description": "Block number of the transaction event"},
-        {"name": "timestamp",        "dtype": "string",  "description": "ISO 8601 block timestamp (UTC)"},
-        {"name": "tx_hash",          "dtype": "string",  "description": "Transaction hash"},
-        {"name": "from_address",     "dtype": "string",  "description": "Sender address (lowercase hex)"},
-        {"name": "to_address",       "dtype": "string",  "description": "Receiver address (lowercase hex)"},
-        {"name": "raw_amount",       "dtype": "string",  "description": "Transaction amount as 18-decimal integer string - use this for full precision arithmetic"},
-        {"name": "decimals",         "dtype": "int64",   "description": "Token decimal places (always 18 for TIBBIR)"},
-        {"name": "amount",           "dtype": "float64", "description": "Transaction amount in TIBBIR units (raw_amount / 10^18)"},
-        {"name": "contract_address", "dtype": "string",  "description": "TIBBIR ERC-20 contract address"},
-        {"name": "category",         "dtype": "string",  "description": "Alchemy transaction category (always 'erc20')"},
-        {"name": "asset",            "dtype": "string",  "description": "Token symbol (TIBBIR)"},
-    ]
-
-    print("Loading master transfers...")
-    df = pd.read_parquet(config.MASTER_FILE)
-    print(f"  {len(df):,} rows")
-
-    # Populate example values from a mid-dataset row
-    sample_row = df.iloc[len(df) // 2]
-    for col in COLUMN_SCHEMA:
-        val = sample_row.get(col["name"], None)
-        col["example"] = str(val) if val is not None else None
-
-    print("Writing transfers_master.parquet...")
-    with fs.open(f"{config.PUBLIC_GCS_PREFIX}/transfers_master.parquet", 'wb') as f:
-        df.to_parquet(f, index=False)
-
-    print("Writing sample_transfers.parquet (1,000 rows)...")
-    with fs.open(f"{config.PUBLIC_GCS_PREFIX}/sample_transfers.parquet", 'wb') as f:
-        df.head(1_000).to_parquet(f, index=False)
-
-    schema = {
-        "dataset":   "TIBBIR ERC-20 Token Transactions",
-        "columns":   COLUMN_SCHEMA,
-        "notes": [
-            "The zero address (0x0000000000000000000000000000000000000000) appears as from_address on mint events.",
-            "raw_amount is stored as a string to preserve full 18-decimal integer precision. Convert with int(raw_amount) / 10**18.",
-            "amount (float64) may lose sub-token precision on very large transactions - prefer raw_amount for exact arithmetic.",
-            "Addresses are always lowercase.",
-        ],
-        "quickstart_python": (
-            "import pandas as pd\n"
-            "transactions = pd.read_parquet('https://storage.googleapis.com/tibson-public/transfers_master.parquet')\n"
-            "# or load the sample first:\n"
-            "sample = pd.read_parquet('https://storage.googleapis.com/tibson-public/sample_transfers.parquet')"
-        ),
-    }
-
-    print("Writing schema.json...")
-    _write_json(schema, f"{config.PUBLIC_GCS_PREFIX}/schema.json")
-
-    now_utc = datetime.now(timezone.utc).isoformat()
-    meta = {
-        "dataset":          "TIBBIR ERC-20 Token Transactions",
-        "description":      (
-            "Complete on-chain transaction history for the TIBBIR token on Base (EVM). "
-            "Updated hourly. Each row is one ERC-20 transaction event."
-        ),
-        "chain":            config.CHAIN,
-        "contract_address": config.CONTRACT_ADDRESS,
-        "last_updated_utc": now_utc,
-        "row_count":        len(df),
-        "first_block":      int(df['block_number'].min()),
-        "last_block":       int(df['block_number'].max()),
-        "first_timestamp":  str(df['timestamp'].min()),
-        "last_timestamp":   str(df['timestamp'].max()),
-        "files": {
-            "transfers_master": {
-                "url":         f"{BASE_URL}/transfers_master.parquet",
-                "format":      "parquet",
-                "description": "Full transaction history - all {row_count:,} rows".replace("{row_count:,}", f"{len(df):,}"),
-            },
-            "sample_transfers": {
-                "url":         f"{BASE_URL}/sample_transfers.parquet",
-                "format":      "parquet",
-                "description": "First 1,000 transaction rows - quick preview without downloading the full dataset",
-            },
-            "schema": {
-                "url":         f"{BASE_URL}/schema.json",
-                "format":      "json",
-                "description": "Column definitions, dtypes, example values, and Python quickstart",
-            },
-            "metadata": {
-                "url":         f"{BASE_URL}/metadata.json",
-                "format":      "json",
-                "description": "Dataset-level stats and file listing (this file)",
-            },
-        },
-    }
-
-    print("Writing metadata.json...")
-    _write_json(meta, f"{config.PUBLIC_GCS_PREFIX}/metadata.json")
-
-    return (
-        f"Public dataset published. {len(df):,} rows.\n"
-        f"  {BASE_URL}/transfers_master.parquet\n"
-        f"  {BASE_URL}/sample_transfers.parquet\n"
-        f"  {BASE_URL}/schema.json\n"
-        f"  {BASE_URL}/metadata.json"
-    )
+    raise RuntimeError("Public dataset publishing is paused while Tibson uses private R2 dashboard bundles only.")

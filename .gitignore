@@ -12,12 +12,16 @@ venv/
 .streamlit/
 SECURITY_NOTES.local.md
 *.json.key
+R2.json
+R2 Account API Token.json
+R2 User Token.json
 
 # Node / Next.js
 node_modules/
 .next/
 out/
 dist/
+*.log
 *.tsbuildinfo
 
 # IDE / OS

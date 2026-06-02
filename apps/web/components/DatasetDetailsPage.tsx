@@ -77,22 +77,6 @@ function SupplyValue({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PythonQuickstart({ publicBaseUrl }: { publicBaseUrl: string }) {
-  return (
-    <pre className="code-block language-python">
-      <code className="language-python">
-        <span className="code-keyword">import</span> requests{"\n"}
-        <span className="code-keyword">import</span> pandas <span className="code-keyword">as</span> pd{"\n\n"}
-        base <span className="code-operator">=</span> <span className="code-string">&quot;{publicBaseUrl}&quot;</span>{"\n"}
-        metadata <span className="code-operator">=</span> requests.get(f<span className="code-string">&quot;{`{base}`}/metadata.json&quot;</span>).json(){"\n"}
-        schema <span className="code-operator">=</span> requests.get(f<span className="code-string">&quot;{`{base}`}/schema.json&quot;</span>).json(){"\n"}
-        sample <span className="code-operator">=</span> pd.read_parquet(f<span className="code-string">&quot;{`{base}`}/sample_transfers.parquet&quot;</span>){"\n"}
-        transactions <span className="code-operator">=</span> pd.read_parquet(f<span className="code-string">&quot;{`{base}`}/transfers_master.parquet&quot;</span>)
-      </code>
-    </pre>
-  );
-}
-
 export function DatasetDetailsPage() {
   const [details, setDetails] = useState<DatasetDetailsBundle | null>(null);
   const [verification, setVerification] = useState<WalletVerificationBundle | null>(null);
@@ -130,8 +114,6 @@ export function DatasetDetailsPage() {
   const totalSupply = Number(metadata.total_minted_supply || 0);
   const burnedSupply = Number(metadata.burned_supply || 0);
   const deadSupply = Number(metadata.dead_address_supply || 0);
-  const publicBaseUrl = details.publicDataset.baseUrl || "https://storage.googleapis.com/tibson-public";
-
   return (
     <main className="page">
       <p><Link href="/">Back to dashboard</Link></p>
@@ -159,15 +141,11 @@ export function DatasetDetailsPage() {
         <details className="details">
           <summary>Public dataset</summary>
           <div className="details-body">
-            <p>The full transaction dataset is published to a public Google Storage bucket.</p>
-            <ul>
-              <li><a href={details.publicDataset.metadata}>Metadata</a>: dataset stats and file listing.</li>
-              <li><a href={details.publicDataset.schema}>Schema</a>: column definitions, dtypes, examples, and Python quickstart.</li>
-              <li><a href={details.publicDataset.sampleTransactions}>Sample transactions</a>: first 1,000 rows for quick inspection.</li>
-              <li><a href={details.publicDataset.fullTransactionHistory}>Full transaction history</a>: complete Parquet dataset.</li>
+            <p>Public dataset downloads are temporarily paused while Tibson verifies the R2 migration.</p>
+            <ul className="note-list">
+              <li>Dashboard views still use private server-side bundles.</li>
+              <li>Large public transaction files will return after a lower-cost storage path is in place.</li>
             </ul>
-            <div className="code-heading">Quickstart</div>
-            <PythonQuickstart publicBaseUrl={publicBaseUrl} />
           </div>
         </details>
         <details className="details">

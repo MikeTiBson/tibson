@@ -4,133 +4,41 @@
 #
 #    pip-compile --output-file=requirements.txt --strip-extras requirements.in
 #
-aiohappyeyeballs==2.6.1
-    # via aiohttp
-aiohttp==3.13.5
-    # via gcsfs
-aiosignal==1.4.0
-    # via aiohttp
-attrs==26.1.0
-    # via aiohttp
+boto3==1.43.19
+    # via -r requirements.in
+botocore==1.43.19
+    # via
+    #   boto3
+    #   s3transfer
 certifi==2026.4.22
     # via requests
-cffi==2.0.0
-    # via cryptography
 charset-normalizer==3.4.7
     # via requests
-cryptography==48.0.0
-    # via google-auth
-decorator==5.2.1
-    # via gcsfs
-frozenlist==1.8.0
-    # via
-    #   aiohttp
-    #   aiosignal
-fsspec==2026.3.0
-    # via gcsfs
-gcsfs==2026.5.0
-    # via -r requirements.in
-google-api-core==2.30.3
-    # via
-    #   google-cloud-core
-    #   google-cloud-storage
-    #   google-cloud-storage-control
-google-auth==2.52.0
-    # via
-    #   gcsfs
-    #   google-api-core
-    #   google-auth-oauthlib
-    #   google-cloud-core
-    #   google-cloud-storage
-    #   google-cloud-storage-control
-google-auth-oauthlib==1.4.0
-    # via gcsfs
-google-cloud-core==2.6.0
-    # via google-cloud-storage
-google-cloud-storage==3.10.1
-    # via gcsfs
-google-cloud-storage-control==1.11.0
-    # via gcsfs
-google-crc32c==1.8.0
-    # via
-    #   google-cloud-storage
-    #   google-resumable-media
-google-resumable-media==2.9.0
-    # via google-cloud-storage
-googleapis-common-protos==1.75.0
-    # via
-    #   google-api-core
-    #   grpc-google-iam-v1
-    #   grpcio-status
-grpc-google-iam-v1==0.14.4
-    # via google-cloud-storage-control
-grpcio==1.80.0
-    # via
-    #   google-api-core
-    #   google-cloud-storage-control
-    #   googleapis-common-protos
-    #   grpc-google-iam-v1
-    #   grpcio-status
-grpcio-status==1.80.0
-    # via google-api-core
 idna==3.13
+    # via requests
+jmespath==1.1.0
     # via
-    #   requests
-    #   yarl
-multidict==6.7.1
-    # via
-    #   aiohttp
-    #   yarl
+    #   boto3
+    #   botocore
 numpy==2.4.4
     # via pandas
-oauthlib==3.3.1
-    # via requests-oauthlib
 pandas==3.0.2
     # via -r requirements.in
-propcache==0.5.2
-    # via
-    #   aiohttp
-    #   yarl
-proto-plus==1.28.0
-    # via
-    #   google-api-core
-    #   google-cloud-storage-control
-protobuf==6.33.2
-    # via
-    #   google-api-core
-    #   google-cloud-storage-control
-    #   googleapis-common-protos
-    #   grpc-google-iam-v1
-    #   grpcio-status
-    #   proto-plus
 pyarrow==24.0.0
     # via -r requirements.in
-pyasn1==0.6.3
-    # via pyasn1-modules
-pyasn1-modules==0.4.2
-    # via google-auth
-pycparser==3.0
-    # via cffi
 python-dateutil==2.9.0.post0
-    # via pandas
-requests==2.33.1
     # via
-    #   -r requirements.in
-    #   gcsfs
-    #   google-api-core
-    #   google-cloud-storage
-    #   requests-oauthlib
-requests-oauthlib==2.0.0
-    # via google-auth-oauthlib
+    #   botocore
+    #   pandas
+requests==2.33.1
+    # via -r requirements.in
+s3transfer==0.18.0
+    # via boto3
 six==1.17.0
     # via python-dateutil
-typing-extensions==4.15.0
-    # via
-    #   aiosignal
-    #   grpcio
 tzdata==2023.3
     # via pandas
 urllib3==2.7.0
-    # via requests
-yarl==1.23.0
-    # via aiohttp
+    # via
+    #   botocore
+    #   requests

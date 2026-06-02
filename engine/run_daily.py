@@ -12,7 +12,6 @@ from engine.update import (
     update_coin_age_snapshots,
     build_wallet_events,
     build_wallet_summary,
-    publish_public_dataset,
     update_price_history,
     build_soulbound_holder_supply,
     build_chad_cohorts,
@@ -54,6 +53,3 @@ print(build_chad_cohorts())
 
 print("=== build_dashboard_bundles ===")
 print(build_dashboard_bundles())
-
-print("=== publish_public_dataset ===")
-print(publish_public_dataset())

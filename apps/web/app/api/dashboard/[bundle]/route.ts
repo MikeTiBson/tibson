@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertBundleName, readDashboardBundle } from "@/lib/gcs";
+import { assertBundleName, readDashboardBundle } from "@/lib/dashboardStorage";
 import { validateDashboardBundle } from "@/lib/bundleSchemas";
 
 export const runtime = "nodejs";
