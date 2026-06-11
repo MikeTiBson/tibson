@@ -140,6 +140,12 @@ p {
   margin-top: 0;
 }
 
+.top-data-note {
+  color: var(--faint);
+  font-size: 0.95rem;
+  margin: 0.85rem 0 1.1rem;
+}
+
 .top-summary .metric-value {
   font-size: clamp(1.45rem, 4vw, 2rem);
 }
@@ -285,6 +291,51 @@ p {
 .chart {
   width: 100%;
   min-height: 360px;
+}
+
+.plot-shell {
+  position: relative;
+}
+
+.plot-shell.loading .chart {
+  opacity: 0;
+}
+
+.chart-skeleton {
+  inset: 0;
+  overflow: hidden;
+  position: absolute;
+}
+
+.chart-skeleton-block {
+  background: linear-gradient(90deg, rgba(255, 247, 232, 0.10), rgba(255, 247, 232, 0.22), rgba(255, 247, 232, 0.10));
+  background-size: 220% 100%;
+  border-radius: 10px;
+  bottom: 0.85rem;
+  display: block;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0.85rem;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+.price-context-below {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.price-context-below.ready {
+  opacity: 1;
 }
 
 .compact-chart {
@@ -620,9 +671,11 @@ td {
 }
 
 th {
-  background: var(--bg);
+  background: rgba(255, 247, 232, 0.07);
+  box-shadow: inset 0 -1px 0 rgba(255, 247, 232, 0.32);
   color: var(--text);
-  font-size: 0.84rem;
+  font-size: 0.88rem;
+  font-weight: 800;
   position: sticky;
   top: 0;
   z-index: 1;

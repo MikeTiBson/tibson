@@ -1568,6 +1568,7 @@ def build_dashboard_bundles():
         "price-context": price_context,
         "chad": {
             "criteria": [
+                "current balance is greater than 10k TIBBIR",
                 "current holdings are at least 90% of peak holdings",
                 "total sold / total bought is less than 20%",
             ],

@@ -239,6 +239,7 @@ function groupedPriceMarkers(price: PriceBundle, events: PriceEvent[]) {
 
 function PriceStory({ price, context }: { price: PriceBundle; context: PriceContextBundle }) {
   const [mode, setMode] = useState<"Off" | "Key events" | "Bonus lore">("Key events");
+  const [chartReady, setChartReady] = useState(false);
   const isMobile = useIsMobile();
   const markers = useMemo(() => groupedPriceMarkers(price, context.events), [price, context.events]);
   const major = markers.filter((marker) => marker.tier === "major");
@@ -350,17 +351,21 @@ function PriceStory({ price, context }: { price: PriceBundle; context: PriceCont
           showlegend: false,
           yaxis: { tickprefix: "$", tickformat: ".2f" } as Partial<Layout["yaxis"]>,
         }}
+        loadingHeight={isMobile ? 320 : 400}
+        onReady={() => setChartReady(true)}
       />
-      <div className="chart-legend" aria-label="Price chart legend">
-        <span className="legend-item"><span className="legend-line" />Price</span>
-        {mode === "Key events" && (
-          <>
-            <span className="legend-item"><Image alt="" className="legend-icon" src="/ribbit-coin.png" width={18} height={18} />Major events</span>
-            <span className="legend-item"><span className="legend-dot legend-dot-other" />Other</span>
-          </>
-        )}
+      <div className={`price-context-below ${chartReady ? "ready" : ""}`}>
+        <div className="chart-legend" aria-label="Price chart legend">
+          <span className="legend-item"><span className="legend-line" />Price</span>
+          {mode === "Key events" && (
+            <>
+              <span className="legend-item"><Image alt="" className="legend-icon" src="/ribbit-coin.png" width={18} height={18} />Major events</span>
+              <span className="legend-item"><span className="legend-dot legend-dot-other" />Other</span>
+            </>
+          )}
+        </div>
+        {mode !== "Off" && <PriceContextDetails mode={mode} context={context} />}
       </div>
-      {mode !== "Off" && <PriceContextDetails mode={mode} context={context} />}
     </section>
   );
 }
@@ -499,6 +504,7 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
       <h2>Chad wallets</h2>
       <div className="note-list">
         <strong>Inclusion criteria for wallets</strong><br />
+        - current balance is greater than 10k TIBBIR<br />
         - current holdings are at least 90% of peak holdings<br />
         - total out / total in is less than 20%
       </div>
@@ -533,14 +539,14 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
           <WalletSearchTable
             rows={chad.wallets.filter((row) => String(row.cohort) === activeCohort)}
             contract={contract}
-            columns={["Wallet", "BaseScan", "Current / peak", "% of peak", "In / out", "Avg coin age"]}
+            columns={["Wallet", "BaseScan", "Current_peak", "%_of_peak", "In_out", "Avg_coin_age"]}
             rowMapper={(row) => ({
               Wallet: shortAddress(String(row.wallet_address)),
               BaseScan: <a href={basescanTokenUrl(contract, String(row.wallet_address))} target="_blank">open</a>,
-              "Current / peak": `${fmtNumber(Number(row.current_balance))} / ${fmtNumber(Number(row.peak_balance))}`,
-              "% of peak": fmtPct(Number(row.retention_ratio) * 100),
-              "In / out": fmtPct(Number(row.turnover_ratio) * 100),
-              "Avg coin age": `${fmtNumber(Number(row.avg_coin_age_days))}d`,
+              Current_peak: `${fmtNumber(Number(row.current_balance))} / ${fmtNumber(Number(row.peak_balance))}`,
+              "%_of_peak": fmtPct(Number(row.retention_ratio) * 100),
+              In_out: fmtPct(Number(row.turnover_ratio) * 100),
+              Avg_coin_age: `${fmtNumber(Number(row.avg_coin_age_days))}d`,
             })}
             searchKey="wallet_address"
           />
@@ -559,14 +565,14 @@ function ChadSummaryTable({ chad, circulatingSupply }: { chad: ChadBundle; circu
     return {
       Cohort: cohort,
       Wallets: fmtNumber(Number(row.wallet_count || 0)),
-      "TIBBIR held": fmtNumber(totalBalance),
-      "% of supply": fmtPct(circulatingSupply > 0 ? (totalBalance / circulatingSupply) * 100 : 0, 2),
-      "Avg coin age": `${fmtNumber(Number(row.avg_coin_age_days || 0))} days`,
-      "% of peak": fmtPct(Number(row.avg_retention_ratio || 0) * 100),
-      "In / out": fmtPct(Number(row.avg_turnover_ratio || 0) * 100),
+      TIBBIR_held: fmtNumber(totalBalance),
+      "%_of_supply": fmtPct(circulatingSupply > 0 ? (totalBalance / circulatingSupply) * 100 : 0, 2),
+      Avg_coin_age: `${fmtNumber(Number(row.avg_coin_age_days || 0))} days`,
+      "%_of_peak": fmtPct(Number(row.avg_retention_ratio || 0) * 100),
+      In_out: fmtPct(Number(row.avg_turnover_ratio || 0) * 100),
     };
   });
-  return <Table columns={["Cohort", "Wallets", "TIBBIR held", "% of supply", "Avg coin age", "% of peak", "In / out"]} rows={rows} />;
+  return <Table columns={["Cohort", "Wallets", "TIBBIR_held", "%_of_supply", "Avg_coin_age", "%_of_peak", "In_out"]} rows={rows} />;
 }
 
 function SoulboundWallets({ soulbound, contract, circulatingSupply }: { soulbound: SoulboundBundle; contract: string; circulatingSupply: number }) {
@@ -783,10 +789,7 @@ export function DashboardApp() {
           <Metric label="Last updated" value={String(meta.last_updated_utc || "-").replace("T", " ").slice(0, 16) + " UTC"} />
           <Metric label="Latest block" value={fmtNumber(Number(meta.end_block || 0))} />
         </div>
-        <ul className="note-list">
-          <li>Transaction data updates ~daily</li>
-          <li>Price data updates daily</li>
-        </ul>
+        <p className="top-data-note">Data updates ~daily</p>
         <p><a href="/dataset-details">Read more details about data coverage</a></p>
       </section>
       <ChartNavigation activeView={activeView} onChange={setActiveView} />

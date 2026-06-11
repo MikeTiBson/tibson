@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
 import type { Layout, Config, Data } from "plotly.js";
 
 const Plotly = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -50,22 +51,50 @@ const baseLayout: Partial<Layout> = {
   },
 };
 
-export function Plot({ data, layout, className = "chart" }: { data: Data[]; layout?: Partial<Layout>; className?: string }) {
-  const mergedLayout = {
+export function Plot({
+  data,
+  layout,
+  className = "chart",
+  loadingHeight,
+  onReady,
+}: {
+  data: Data[];
+  layout?: Partial<Layout>;
+  className?: string;
+  loadingHeight?: number;
+  onReady?: () => void;
+}) {
+  const [ready, setReady] = useState(false);
+  const height = Number(layout?.height || loadingHeight || 360);
+  const mergedLayout = useMemo(() => ({
     ...baseLayout,
     ...layout,
     xaxis: { ...baseLayout.xaxis, ...layout?.xaxis },
     yaxis: { ...baseLayout.yaxis, ...layout?.yaxis },
+  }), [layout]);
+
+  const handleReady = () => {
+    setReady(true);
+    onReady?.();
   };
 
   return (
-    <Plotly
-      className={className}
-      config={config}
-      data={data}
-      layout={mergedLayout}
-      style={{ width: "100%", height: "100%" }}
-      useResizeHandler
-    />
+    <div className={`plot-shell ${ready ? "ready" : "loading"}`} style={{ minHeight: height }}>
+      {!ready && (
+        <div aria-hidden="true" className="chart-skeleton" style={{ minHeight: height }}>
+          <span className="chart-skeleton-block" />
+        </div>
+      )}
+      <Plotly
+        className={className}
+        config={config}
+        data={data}
+        layout={mergedLayout}
+        onInitialized={handleReady}
+        onUpdate={handleReady}
+        style={{ width: "100%", height: "100%" }}
+        useResizeHandler
+      />
+    </div>
   );
 }
