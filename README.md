@@ -73,4 +73,4 @@ dashboard/
 smoke/
 ```
 
-GitHub Actions workflows are currently disabled while the storage migration is verified.
+GitHub Actions runs the full R2-backed refresh twice daily at 00:00 UTC and 12:00 UTC. The manual `Run job` workflow remains available for one-off debugging and backfills.

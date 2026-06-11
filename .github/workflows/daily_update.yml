@@ -1,12 +1,19 @@
-name: Hourly update
+name: Twice-daily update
 
 on:
   schedule:
-    - cron: "0 * * * *"  # every hour
+    - cron: "0 0,12 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: tibson-daily-update
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   update:
@@ -24,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run hourly update
+      - name: Run twice-daily update
         run: python engine/run_daily.py
         env:
           ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}

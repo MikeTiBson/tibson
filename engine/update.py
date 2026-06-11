@@ -1555,7 +1555,7 @@ def build_dashboard_bundles():
             "metadata": metadata,
             "contractAddress": config.CONTRACT_ADDRESS,
             "chain": config.CHAIN,
-            "updateCadence": {"transactions": "~every 4 hours", "price": "daily"},
+            "updateCadence": {"transactions": "~daily", "price": "daily"},
         },
         "price": {
             "latest": _df_records(price.tail(1).rename(columns={"price_usd": "priceUsd"}))[0] if not price.empty else None,

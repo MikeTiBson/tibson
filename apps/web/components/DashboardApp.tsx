@@ -784,7 +784,7 @@ export function DashboardApp() {
           <Metric label="Latest block" value={fmtNumber(Number(meta.end_block || 0))} />
         </div>
         <ul className="note-list">
-          <li>Transaction data updates ~every 4 hours</li>
+          <li>Transaction data updates ~daily</li>
           <li>Price data updates daily</li>
         </ul>
         <p><a href="/dataset-details">Read more details about data coverage</a></p>
