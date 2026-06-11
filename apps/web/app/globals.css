@@ -737,8 +737,12 @@ td {
 
 @media (max-width: 720px) {
   .page {
-    width: min(100% - 1rem, 1080px);
-    padding-top: 1.2rem;
+    width: min(100% - 2rem, 1080px);
+    padding: 1.2rem 0 3rem;
+  }
+
+  .section {
+    padding: 1.55rem 0;
   }
 
   .metric-grid {
@@ -764,6 +768,25 @@ td {
 
   .chart {
     min-height: 320px;
+  }
+
+  .plot-shell {
+    margin-left: 0.25rem;
+    margin-right: 0.25rem;
+  }
+
+  .chart-legend {
+    margin-left: 0.75rem;
+  }
+
+  .table-wrap,
+  .details {
+    border-radius: 8px;
+  }
+
+  .table-wrap {
+    margin-left: 0.15rem;
+    margin-right: 0.15rem;
   }
 
   .details-body {
