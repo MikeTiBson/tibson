@@ -1,6 +1,7 @@
 import pandas as pd
 
 import config
+from analytics.coin_age import WalletState
 
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -95,6 +96,50 @@ def _latest_coin_age(coin_age_snapshots):
     )
 
 
+def _current_coin_age(wallet_events, addresses=None, as_of=None):
+    if wallet_events is None or wallet_events.empty:
+        return pd.DataFrame(columns=["address", "avg_age"])
+
+    events = wallet_events.copy()
+    events["address"] = events["address"].astype(str).str.lower()
+    if addresses is not None:
+        events = events[events["address"].isin({str(addr).lower() for addr in addresses})].copy()
+    if events.empty:
+        return pd.DataFrame(columns=["address", "avg_age"])
+
+    events["_ts"] = pd.to_datetime(events["timestamp"], utc=True)
+    if "event_id" in events.columns:
+        events["_log_index"] = events["event_id"].astype(str).str.rsplit(":", n=1).str[-1].astype(int)
+    else:
+        events["_log_index"] = 0
+
+    as_of_ts = pd.to_datetime(as_of, utc=True) if as_of is not None else events["_ts"].max()
+    events = events[events["_ts"] <= as_of_ts].sort_values(["address", "_ts", "block_number", "_log_index"])
+
+    rows = []
+    for address, group in events.groupby("address", sort=False):
+        state = WalletState()
+        current = group["_ts"].iloc[0]
+
+        for _, row in group.iterrows():
+            ts = row["_ts"]
+            state.apply_time((ts - current).total_seconds() / 86400)
+            current = ts
+
+            amount = float(row["amount"])
+            if row["direction"] == "in":
+                state.apply_incoming(amount)
+            else:
+                state.apply_outgoing(amount)
+
+        if current < as_of_ts:
+            state.apply_time((as_of_ts - current).total_seconds() / 86400)
+
+        rows.append({"address": address, "avg_age": state.avg_age()})
+
+    return pd.DataFrame(rows, columns=["address", "avg_age"])
+
+
 def _current_cohort_metrics(wallets):
     rows = []
     for label, low, high in CHAD_COHORTS:
@@ -185,6 +230,7 @@ def select_chad_wallets(
 
     events = wallet_events.copy()
     events["address"] = events["address"].astype(str).str.lower()
+    as_of = pd.to_datetime(events["timestamp"], utc=True).max() if not events.empty else None
     events = events[events["address"].isin(summary["address"])].copy()
 
     peak = _wallet_peak_balances(events)
@@ -202,7 +248,10 @@ def select_chad_wallets(
     if wallets.empty:
         return pd.DataFrame()
 
-    return wallets.merge(_latest_coin_age(coin_age_snapshots), on="address", how="left")
+    age = _current_coin_age(events, addresses=wallets["address"], as_of=as_of)
+    if age.empty and coin_age_snapshots is not None:
+        age = _latest_coin_age(coin_age_snapshots)
+    return wallets.merge(age, on="address", how="left")
 
 
 def build_chad_wallets(
