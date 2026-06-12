@@ -582,22 +582,19 @@ def build_chad_cohorts():
     Returns:
         str: Status message
     """
-    print("Loading wallet events, wallet summary, coin age snapshots, and known labels...")
+    print("Loading wallet events, wallet summary, and known labels...")
     wallet_events = _read_parquet(config.WALLET_EVENTS_FILE)
     wallet_summary = _read_parquet(config.WALLET_SUMMARY_FILE)
-    coin_age_snapshots = _read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
     known_addresses = _load_chad_known_addresses()
 
     result = _build_chad_cohorts(
         wallet_events=wallet_events,
         wallet_summary=wallet_summary,
-        coin_age_snapshots=coin_age_snapshots,
         known_addresses=known_addresses,
     )
     wallets = _build_chad_wallets(
         wallet_events=wallet_events,
         wallet_summary=wallet_summary,
-        coin_age_snapshots=coin_age_snapshots,
         known_addresses=known_addresses,
     )
     _write_parquet(result, config.CHAD_COHORTS_FILE)
@@ -610,6 +607,12 @@ def build_chad_cohorts():
     metadata["chad_cohort_history_days"] = int(result["date"].nunique()) if not result.empty else 0
     metadata["chad_wallet_rows"] = int(len(wallets))
     metadata["chad_cohorts_built_utc"] = datetime.now(timezone.utc).isoformat()
+    metadata["chad_coin_age_as_of_utc"] = (
+        pd.to_datetime(wallet_events["timestamp"], utc=True).max().isoformat()
+        if not wallet_events.empty
+        else None
+    )
+    metadata["chad_coin_age_source"] = "wallet_events_current_as_of_last_indexed_transfer"
     metadata["chad_cohort_config"] = {
         "retention_threshold": 0.90,
         "turnover_threshold": 0.20,
@@ -1103,6 +1106,24 @@ def build_wallet_activity():
 # COIN AGE SNAPSHOTS
 # =====================================================
 
+def _record_coin_age_snapshot_metadata(snapshots, wrote_snapshot):
+    metadata = _read_json(config.METADATA_FILE)
+    now = datetime.now(timezone.utc).isoformat()
+    metadata["coin_age_snapshots_checked_utc"] = now
+    if wrote_snapshot:
+        metadata["coin_age_snapshots_built_utc"] = now
+
+    metadata["coin_age_snapshot_rows"] = int(len(snapshots))
+    metadata["coin_age_snapshot_wallets"] = int(snapshots["address"].nunique()) if not snapshots.empty else 0
+    metadata["coin_age_snapshot_max_week_start"] = (
+        pd.to_datetime(snapshots["week_start"]).dt.date.max().isoformat()
+        if not snapshots.empty
+        else None
+    )
+    metadata["coin_age_snapshot_cadence"] = "weekly completed weeks"
+    _write_json(metadata, config.METADATA_FILE)
+
+
 def rebuild_coin_age_snapshots():
     """
     Full rebuild of per-wallet weekly coin age snapshots from the master ledger.
@@ -1153,6 +1174,7 @@ def rebuild_coin_age_snapshots():
 
     all_snapshots = pd.concat(results, ignore_index=True)
     _write_parquet(all_snapshots, config.COIN_AGE_SNAPSHOTS_FILE)
+    _record_coin_age_snapshot_metadata(all_snapshots, wrote_snapshot=True)
 
     elapsed = time.time() - t0
     return (
@@ -1195,6 +1217,7 @@ def update_coin_age_snapshots():
     current_boundary = (_floor_to_monday(now) - timedelta(weeks=1)).date()
 
     if current_boundary <= last_week:
+        _record_coin_age_snapshot_metadata(existing, wrote_snapshot=False)
         return "No new weeks to add — snapshots are current."
 
     print(f"Adding weeks from {last_week} to {current_boundary}")
@@ -1253,6 +1276,7 @@ def update_coin_age_snapshots():
     parts = [trimmed] + rebuilt + ([projected] if not projected.empty else [])
     result = pd.concat(parts, ignore_index=True)
     _write_parquet(result, config.COIN_AGE_SNAPSHOTS_FILE)
+    _record_coin_age_snapshot_metadata(result, wrote_snapshot=True)
 
     elapsed = time.time() - t0
     return (
