@@ -130,7 +130,24 @@ function bucketFillColor(label: string) {
   return BUCKET_FILL_COLORS[label] || "rgba(255, 247, 232, 0.5)";
 }
 
-function Table({ columns, rows }: { columns: string[]; rows: Array<Record<string, React.ReactNode>> }) {
+type SortDirection = "asc" | "desc";
+type SortConfig = { column: string; direction: SortDirection };
+type SortAccessors<T> = Partial<Record<string, (row: T) => string | number | null | undefined>>;
+
+function Table({
+  columns,
+  rows,
+  sortState,
+  sortableColumns,
+  onSort,
+}: {
+  columns: string[];
+  rows: Array<Record<string, React.ReactNode>>;
+  sortState?: SortConfig | null;
+  sortableColumns?: string[];
+  onSort?: (column: string) => void;
+}) {
+  const sortable = new Set(sortableColumns || []);
   return (
     <div className="table-scroll-shell">
       <span
@@ -145,7 +162,29 @@ function Table({ columns, rows }: { columns: string[]; rows: Array<Record<string
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
+            <tr>
+              {columns.map((column) => {
+                const isSortable = sortable.has(column) && onSort;
+                const isActive = sortState?.column === column;
+                return (
+                  <th
+                    aria-sort={isActive ? (sortState.direction === "asc" ? "ascending" : "descending") : undefined}
+                    key={column}
+                  >
+                    {isSortable ? (
+                      <button
+                        aria-label={`Sort by ${column} ${isActive && sortState.direction === "desc" ? "ascending" : "descending"}`}
+                        className={`table-sort-button ${isActive ? `active ${sortState.direction}` : ""}`}
+                        onClick={() => onSort(column)}
+                        type="button"
+                      >
+                        {column}
+                      </button>
+                    ) : column}
+                  </th>
+                );
+              })}
+            </tr>
           </thead>
           <tbody>
             {rows.map((row, idx) => (
@@ -156,6 +195,14 @@ function Table({ columns, rows }: { columns: string[]; rows: Array<Record<string
       </div>
     </div>
   );
+}
+
+function compareSortValues(a: string | number | null | undefined, b: string | number | null | undefined) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
 }
 
 function ProgressValue({ value }: { value: number }) {
@@ -514,7 +561,7 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
         <Metric label="Share of supply" value={fmtPct(supplyShare, 2)} />
         <Metric label="Avg coin age" value={`${fmtNumber(chad.summary.avgCoinAgeDays)} days`} />
       </div>
-      <InfoTooltip text={"- Wallets qualify based on their current status; their past holdings are then shown over time.\n- Historical holdings are grouped by each wallet's current cohort.\n- Supply share uses circulating supply, excluding burned and dead-address TIBBIR."} />
+      <InfoTooltip text={"- Wallets qualify based on their current status; their past holdings are then shown over time.\n- Historical holdings are grouped by each wallet's current cohort.\n- Supply share uses circulating supply, excluding burned and dead-address supply."} />
       <Plot data={data} layout={{ height: 400, hovermode: "x unified", yaxis: { ticksuffix: "M" } }} />
       <ChadSummaryTable chad={chad} circulatingSupply={circulatingSupply} />
       <details className="details">
@@ -540,6 +587,7 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
             rows={chad.wallets.filter((row) => String(row.cohort) === activeCohort)}
             contract={contract}
             columns={["Wallet", "BaseScan", "Current_peak", "%_of_peak", "In_out", "Avg_coin_age"]}
+            defaultSort={{ column: "Current_peak", direction: "desc" }}
             rowMapper={(row) => ({
               Wallet: shortAddress(String(row.wallet_address)),
               BaseScan: <a href={basescanTokenUrl(contract, String(row.wallet_address))} target="_blank">open</a>,
@@ -549,6 +597,13 @@ function ChadWallets({ chad, contract, circulatingSupply }: { chad: ChadBundle; 
               Avg_coin_age: `${fmtNumber(Number(row.avg_coin_age_days))}d`,
             })}
             searchKey="wallet_address"
+            sortAccessors={{
+              Wallet: (row) => String(row.wallet_address),
+              Current_peak: (row) => Number(row.current_balance),
+              "%_of_peak": (row) => Number(row.retention_ratio),
+              In_out: (row) => Number(row.turnover_ratio),
+              Avg_coin_age: (row) => Number(row.avg_coin_age_days),
+            }}
           />
         </div>
       </details>
@@ -747,24 +802,64 @@ function HolderBuckets({ holderBuckets, view }: { holderBuckets: HolderBucketsBu
 function WalletSearchTable<T extends Record<string, unknown>>({
   rows,
   columns,
+  defaultSort,
   rowMapper,
   searchKey,
+  sortAccessors,
 }: {
   rows: T[];
   contract: string;
   columns: string[];
+  defaultSort?: SortConfig;
   rowMapper: (row: T) => Record<string, React.ReactNode>;
   searchKey: keyof T;
+  sortAccessors?: SortAccessors<T>;
 }) {
   const [query, setQuery] = useState("");
-  const filtered = rows.filter((row) => String(row[searchKey] || "").toLowerCase().includes(query.toLowerCase()));
+  const [sortState, setSortState] = useState<SortConfig | null>(defaultSort || null);
+  const filtered = useMemo(
+    () => rows.filter((row) => String(row[searchKey] || "").toLowerCase().includes(query.toLowerCase())),
+    [query, rows, searchKey],
+  );
+  const sorted = useMemo(() => {
+    const accessor = sortState ? sortAccessors?.[sortState.column] : undefined;
+    if (!sortState || !accessor) return filtered;
+    return [...filtered].sort((a, b) => {
+      const result = compareSortValues(accessor(a), accessor(b));
+      return sortState.direction === "asc" ? result : -result;
+    });
+  }, [filtered, sortAccessors, sortState]);
+  const sortableColumns = columns.filter((column) => sortAccessors?.[column]);
+  const handleSort = (column: string) => {
+    setSortState((current) => ({
+      column,
+      direction: current?.column === column && current.direction === "desc" ? "asc" : "desc",
+    }));
+  };
   return (
     <>
       <input className="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search wallet" />
       <div className="scroll-table wallet-search-results">
-        <Table columns={columns} rows={filtered.map(rowMapper)} />
+        <Table
+          columns={columns}
+          rows={sorted.map(rowMapper)}
+          sortableColumns={sortableColumns}
+          sortState={sortState}
+          onSort={handleSort}
+        />
       </div>
     </>
+  );
+}
+
+function DashboardLoader() {
+  return (
+    <main className="page loading-page">
+      <div className="tibson-loader" role="status" aria-live="polite">
+        <Image className="tibson-loader-img" src="/tibson.avif" alt="" width={82} height={82} priority />
+        <span>Loading...</span>
+      </div>
+    </main>
   );
 }
 
@@ -772,7 +867,7 @@ export function DashboardApp() {
   const { data, error } = useDashboardData();
   const [activeView, setActiveView] = useState<DashboardView>("price");
   if (error) return <main className="page"><div className="status">{error}</div></main>;
-  if (!data) return <main className="page"><div className="status">Loading dashboard data...</div></main>;
+  if (!data) return <DashboardLoader />;
 
   const meta = data.metadata.metadata;
   const circulatingSupply =

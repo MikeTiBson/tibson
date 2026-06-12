@@ -77,6 +77,17 @@ function SupplyValue({ label, value }: { label: string; value: number }) {
   );
 }
 
+function PageLoader() {
+  return (
+    <main className="page loading-page">
+      <div className="tibson-loader" role="status" aria-live="polite">
+        <Image className="tibson-loader-img" src="/tibson.avif" alt="" width={82} height={82} priority />
+        <span>Loading...</span>
+      </div>
+    </main>
+  );
+}
+
 export function DatasetDetailsPage() {
   const [details, setDetails] = useState<DatasetDetailsBundle | null>(null);
   const [verification, setVerification] = useState<WalletVerificationBundle | null>(null);
@@ -100,7 +111,7 @@ export function DatasetDetailsPage() {
   }, []);
 
   if (error) return <main className="page"><div className="status">{error}</div></main>;
-  if (!details || !verification || !price) return <main className="page"><div className="status">Loading dataset details...</div></main>;
+  if (!details || !verification || !price) return <PageLoader />;
 
   const metadata = details.metadata;
   const normalizedWalletQuery = walletQuery.trim().toLowerCase();

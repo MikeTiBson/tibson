@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { basescanTokenUrl, fmtNumber, fmtPct } from "@/lib/format";
 import type { MetadataBundle, MetricExampleBundle } from "@/lib/types";
@@ -25,6 +26,17 @@ function TableScrollTip() {
   );
 }
 
+function PageLoader() {
+  return (
+    <main className="page loading-page">
+      <div className="tibson-loader" role="status" aria-live="polite">
+        <Image className="tibson-loader-img" src="/tibson.avif" alt="" width={82} height={82} priority />
+        <span>Loading...</span>
+      </div>
+    </main>
+  );
+}
+
 export function MetricExamplePage() {
   const [example, setExample] = useState<MetricExampleBundle | null>(null);
   const [metadata, setMetadata] = useState<MetadataBundle | null>(null);
@@ -40,7 +52,7 @@ export function MetricExamplePage() {
   }, []);
 
   if (error) return <main className="page"><div className="status">{error}</div></main>;
-  if (!example || !metadata) return <main className="page"><div className="status">Loading metric example...</div></main>;
+  if (!example || !metadata) return <PageLoader />;
 
   return (
     <main className="page">
