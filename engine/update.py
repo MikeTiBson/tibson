@@ -50,6 +50,14 @@ _ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_PA
 _ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 
+def _transfer_update_dry_run():
+    return os.environ.get("TRANSFER_UPDATE_DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _transfer_update_max_blocks():
+    return int(os.environ.get("TRANSFER_UPDATE_MAX_BLOCKS", "0") or "0")
+
+
 # =====================================================
 # R2 / FILE HELPERS
 # =====================================================
@@ -888,14 +896,27 @@ def update_transfers():
         return "No update needed."
 
     start_block = last_end_block - config.REORG_BUFFER
-    print("Updating range:", start_block, "->", safe_head)
+    target_end_block = safe_head
+    max_blocks = _transfer_update_max_blocks()
+    dry_run = _transfer_update_dry_run()
+    if max_blocks > 0:
+        target_end_block = min(target_end_block, start_block + max_blocks - 1)
+
+    print("Updating range:", start_block, "->", target_end_block)
+    if target_end_block < safe_head:
+        print(
+            f"Limited transfer update: processing {max_blocks} blocks "
+            f"of {safe_head - start_block + 1} available."
+        )
+    if dry_run:
+        print("Dry run enabled: transfer update will not write master, metadata, or recent transfer files.")
 
     # Fetch transfers
     new_rows = []
     total_fetched = 0
     timestamp_cache = {}
 
-    for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_block_ranges(start_block, safe_head)):
+    for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_block_ranges(start_block, target_end_block)):
         if chunk_index > 0:
             time.sleep(_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS)
         print("Transfer chunk:", chunk_start, "->", chunk_end)
@@ -959,14 +980,20 @@ def update_transfers():
     if net_balance != 0:
         raise Exception(f"Invariant failed: ledger net balance = {net_balance}")
 
-    # Ensure we did not index beyond safe_head
+    # Ensure we did not index beyond the requested target range
     max_block_after = int(master["block_number"].max())
-    if max_block_after > safe_head:
+    if max_block_after > target_end_block:
         raise Exception(
-            f"Invariant failed: master max block {max_block_after} exceeds safe head {safe_head}"
+            f"Invariant failed: master max block {max_block_after} exceeds target end block {target_end_block}"
         )
 
     print("All invariants passed.")
+
+    if dry_run:
+        return (
+            f"Dry run complete. {total_fetched} transfers fetched. "
+            f"Would write {len(master)} total rows through block {max_block_after}."
+        )
 
     # Save master
     _write_parquet(master, config.MASTER_FILE)

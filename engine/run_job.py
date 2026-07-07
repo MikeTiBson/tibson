@@ -1,8 +1,23 @@
 import sys
 import argparse
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def _load_dotenv(path):
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(Path(__file__).parent.parent / ".env")
 
 from engine.update import (
     update_transfers,
@@ -46,7 +61,14 @@ JOBS = {
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--job", required=True, choices=list(JOBS))
+parser.add_argument("--transfer-max-blocks", type=int, help="Limit update_transfers to this many blocks.")
+parser.add_argument("--transfer-dry-run", action="store_true", help="Run update_transfers merge/invariants without writing outputs.")
 args = parser.parse_args()
+
+if args.transfer_max_blocks is not None:
+    os.environ["TRANSFER_UPDATE_MAX_BLOCKS"] = str(args.transfer_max_blocks)
+if args.transfer_dry_run:
+    os.environ["TRANSFER_UPDATE_DRY_RUN"] = "1"
 
 print(f"=== {args.job} ===")
 print(JOBS[args.job]())
