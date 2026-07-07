@@ -36,6 +36,12 @@ from analytics.chads import (
     build_chad_wallets as _build_chad_wallets,
 )
 
+_ALCHEMY_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_ALCHEMY_MAX_RETRIES = int(os.environ.get("ALCHEMY_MAX_RETRIES", "6"))
+_ALCHEMY_TIMEOUT_SECONDS = int(os.environ.get("ALCHEMY_TIMEOUT_SECONDS", "30"))
+_ALCHEMY_TRANSFER_BLOCK_SPAN = int(os.environ.get("ALCHEMY_TRANSFER_BLOCK_SPAN", "25000"))
+_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS", "0.2"))
+
 
 # =====================================================
 # R2 / FILE HELPERS
@@ -116,6 +122,61 @@ def _alchemy_prices_url():
     return f"https://api.g.alchemy.com/prices/v1/{api_key}"
 
 
+def _retry_delay(response, attempt):
+    retry_after = response.headers.get("Retry-After") if response is not None else None
+    if retry_after:
+        try:
+            return min(float(retry_after), 60.0)
+        except ValueError:
+            pass
+    return min(2 ** attempt, 60.0)
+
+
+def _post_alchemy_json(url, payload, headers=None, context="Alchemy request"):
+    last_response = None
+    last_error = None
+    for attempt in range(_ALCHEMY_MAX_RETRIES + 1):
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=_ALCHEMY_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt >= _ALCHEMY_MAX_RETRIES:
+                break
+
+            delay = _retry_delay(None, attempt)
+            print(
+                f"{context} failed with {exc.__class__.__name__}; "
+                f"retrying in {delay:.1f}s ({attempt + 1}/{_ALCHEMY_MAX_RETRIES})"
+            )
+            time.sleep(delay)
+            continue
+
+        last_response = response
+
+        if response.status_code not in _ALCHEMY_RETRY_STATUSES:
+            response.raise_for_status()
+            return response.json()
+
+        if attempt >= _ALCHEMY_MAX_RETRIES:
+            break
+
+        delay = _retry_delay(response, attempt)
+        print(
+            f"{context} returned HTTP {response.status_code}; "
+            f"retrying in {delay:.1f}s ({attempt + 1}/{_ALCHEMY_MAX_RETRIES})"
+        )
+        time.sleep(delay)
+
+    if last_response is not None:
+        last_response.raise_for_status()
+    raise last_error
+
+
 def _rpc_call(method, params=None):
     payload = {
         "jsonrpc": "2.0",
@@ -123,9 +184,7 @@ def _rpc_call(method, params=None):
         "method": method,
         "params": params or []
     }
-    r = requests.post(_alchemy_rpc_url(), json=payload)
-    r.raise_for_status()
-    data = r.json()
+    data = _post_alchemy_json(_alchemy_rpc_url(), payload, context=f"Alchemy RPC {method}")
     if "error" in data:
         raise Exception(data["error"])
     return data["result"]
@@ -207,15 +266,13 @@ def _fetch_alchemy_price_history_window(start, end, address=None, symbol=None):
         body["network"] = config.ALCHEMY_PRICE_NETWORK
         body["address"] = address or config.CONTRACT_ADDRESS
 
-    r = requests.post(
+    data = _post_alchemy_json(
         f"{_alchemy_prices_url()}/tokens/historical",
-        json=body,
+        body,
         headers={"accept": "application/json", "content-type": "application/json"},
-        timeout=30,
+        context=f"Alchemy price history {pd.Timestamp(start).date()} -> {pd.Timestamp(end).date()}",
     )
-    if not r.ok:
-        raise RuntimeError(f"Alchemy price request failed: {r.status_code} {r.text}")
-    return r.json()
+    return data
 
 
 def _fetch_alchemy_price_history(start, end, address=None, symbol=None):
@@ -632,6 +689,17 @@ def build_chad_cohorts():
 # UPDATE TRANSFERS
 # =====================================================
 
+def _iter_block_ranges(start_block, end_block, max_span=None):
+    max_span = max_span or _ALCHEMY_TRANSFER_BLOCK_SPAN
+    current = int(start_block)
+    end_block = int(end_block)
+
+    while current <= end_block:
+        chunk_end = min(current + max_span - 1, end_block)
+        yield current, chunk_end
+        current = chunk_end + 1
+
+
 def update_transfers():
     """
     Fetch new transfers from the blockchain and update the master Parquet file.
@@ -658,68 +726,73 @@ def update_transfers():
     print("Updating range:", start_block, "->", safe_head)
 
     # Fetch transfers
-    page_key = None
     new_rows = []
     total_fetched = 0
 
-    while True:
-        params = {
-            "fromBlock": hex(start_block),
-            "toBlock": hex(safe_head),
-            "contractAddresses": [config.CONTRACT_ADDRESS],
-            "category": ["erc20"],
-            "maxCount": config.MAX_COUNT_HEX,
-            "withMetadata": True
-        }
+    for chunk_start, chunk_end in _iter_block_ranges(start_block, safe_head):
+        print("Transfer chunk:", chunk_start, "->", chunk_end)
+        page_key = None
 
-        if page_key:
-            params["pageKey"] = page_key
+        while True:
+            params = {
+                "fromBlock": hex(chunk_start),
+                "toBlock": hex(chunk_end),
+                "contractAddresses": [config.CONTRACT_ADDRESS],
+                "category": ["erc20"],
+                "maxCount": config.MAX_COUNT_HEX,
+                "withMetadata": True
+            }
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "alchemy_getAssetTransfers",
-            "params": [params]
-        }
+            if page_key:
+                params["pageKey"] = page_key
 
-        r = requests.post(_alchemy_rpc_url(), json=payload)
-        r.raise_for_status()
-        data = r.json()
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "alchemy_getAssetTransfers",
+                "params": [params]
+            }
 
-        if "error" in data:
-            raise Exception(data["error"])
+            data = _post_alchemy_json(
+                _alchemy_rpc_url(),
+                payload,
+                context=f"Alchemy transfers {chunk_start}->{chunk_end}",
+            )
 
-        result = data["result"]
-        transfers = result.get("transfers", [])
-        page_key = result.get("pageKey")
+            if "error" in data:
+                raise Exception(data["error"])
 
-        for t in transfers:
-            raw = t.get("rawContract") or {}
-            raw_value = _hex_to_int(raw.get("value"))
-            decimals = _hex_to_int(raw.get("decimal"))
+            result = data["result"]
+            transfers = result.get("transfers", [])
+            page_key = result.get("pageKey")
 
-            new_rows.append({
-                "event_id": t.get("uniqueId"),
-                "block_number": _hex_to_int(t.get("blockNum")),
-                "timestamp": (t.get("metadata") or {}).get("blockTimestamp"),
-                "tx_hash": t.get("hash"),
-                "from_address": (t.get("from") or "").lower(),
-                "to_address": (t.get("to") or "").lower(),
-                "raw_amount": str(raw_value) if raw_value is not None else "",
-                "decimals": decimals,
-                "amount": None,  # Will be NaN in pandas (float64 compatible)
-                "contract_address": (raw.get("address") or config.CONTRACT_ADDRESS).lower(),
-                "category": t.get("category"),
-                "asset": t.get("asset")
-            })
+            for t in transfers:
+                raw = t.get("rawContract") or {}
+                raw_value = _hex_to_int(raw.get("value"))
+                decimals = _hex_to_int(raw.get("decimal"))
 
-        total_fetched += len(transfers)
-        print("Fetched:", total_fetched)
+                new_rows.append({
+                    "event_id": t.get("uniqueId"),
+                    "block_number": _hex_to_int(t.get("blockNum")),
+                    "timestamp": (t.get("metadata") or {}).get("blockTimestamp"),
+                    "tx_hash": t.get("hash"),
+                    "from_address": (t.get("from") or "").lower(),
+                    "to_address": (t.get("to") or "").lower(),
+                    "raw_amount": str(raw_value) if raw_value is not None else "",
+                    "decimals": decimals,
+                    "amount": None,  # Will be NaN in pandas (float64 compatible)
+                    "contract_address": (raw.get("address") or config.CONTRACT_ADDRESS).lower(),
+                    "category": t.get("category"),
+                    "asset": t.get("asset")
+                })
 
-        if not page_key:
-            break
+            total_fetched += len(transfers)
+            print("Fetched:", total_fetched)
 
-        time.sleep(0.05)
+            if not page_key:
+                break
+
+            time.sleep(_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS)
 
     print("Total new transfers fetched:", total_fetched)
 
