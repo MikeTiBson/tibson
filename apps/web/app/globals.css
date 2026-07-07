@@ -111,6 +111,10 @@ p {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.coin-age-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
 .metric {
   min-width: 0;
 }
@@ -126,6 +130,17 @@ p {
   font-size: clamp(1.6rem, 5vw, 2.45rem);
   line-height: 1.1;
   white-space: nowrap;
+}
+
+.metric-with-detail .metric-value {
+  font-size: clamp(1.65rem, 3.2vw, 2.15rem);
+}
+
+.metric-detail {
+  color: var(--faint);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  margin-top: 0.35rem;
 }
 
 .top-summary {
@@ -819,6 +834,10 @@ td {
   .chad-metric-grid,
   .soulbound-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coin-age-metric-grid {
+    grid-template-columns: 1fr;
   }
 
   .supply-grid {

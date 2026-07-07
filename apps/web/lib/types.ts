@@ -5,6 +5,7 @@ export type BundleName =
   | "chad"
   | "soulbound"
   | "holder-buckets"
+  | "coin-age"
   | "wallet-verification"
   | "dataset-details"
   | "metric-example";
@@ -85,6 +86,44 @@ export type HolderBucketsBundle = {
   }>;
   walletCountHistory: Array<Record<string, number | string>>;
   holderDistributionHistory: Array<Record<string, number | string>>;
+};
+
+export type CoinAgeBundle = {
+  summary: {
+    latestWeekStart: string | null;
+    avgCoinAgeDays: number;
+    includedBalance: number;
+    excludedBalance: number;
+    includedSupplyPct: number;
+    excludedSupplyPct: number;
+    includedWallets: number;
+    excludedWallets: number;
+    circulatingSupply: number;
+    latestSnapshotBalance: number;
+    latestSnapshotWallets: number;
+  };
+  buckets: Array<{ label: string }>;
+  history: Array<{
+    weekStart: string;
+    avgCoinAgeDays: number | null;
+    wallets: number;
+    balance: number;
+  }>;
+  bucketHistory: Array<{
+    weekStart: string;
+    bucket: string;
+    avgCoinAgeDays: number | null;
+    wallets: number;
+    balance: number;
+  }>;
+  excludedWallets: Array<{
+    address: string;
+    balance: number;
+    tx_in: number;
+    tx_out: number;
+    reason: string;
+    supplySharePct: number;
+  }>;
 };
 
 export type WalletVerificationBundle = {

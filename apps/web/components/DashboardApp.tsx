@@ -7,6 +7,7 @@ import { Plot } from "./Plot";
 import { basescanTokenUrl, fmtNumber, fmtPct, shortAddress } from "@/lib/format";
 import type {
   ChadBundle,
+  CoinAgeBundle,
   DatasetDetailsBundle,
   HolderBucketsBundle,
   MetadataBundle,
@@ -22,13 +23,14 @@ type DashboardData = {
   price: PriceBundle;
   priceContext: PriceContextBundle;
   chad: ChadBundle;
+  coinAge: CoinAgeBundle | null;
   soulbound: SoulboundBundle;
   holderBuckets: HolderBucketsBundle;
   walletVerification: WalletVerificationBundle;
   datasetDetails: DatasetDetailsBundle;
 };
 
-type DashboardView = "price" | "chad" | "soulbound" | "wallet-count" | "holder-distribution" | "wallets-vs-supply";
+type DashboardView = "price" | "chad" | "coin-age" | "soulbound" | "wallet-count" | "holder-distribution" | "wallets-vs-supply";
 
 const BUCKET_COLORS: Record<string, string> = {
   "1M+": "#5c5345",
@@ -48,6 +50,7 @@ const CHAD_COLORS = [BUCKET_COLORS["10k-100k"], BUCKET_COLORS["100k-1M"], BUCKET
 const VIEW_OPTIONS: Array<{ id: DashboardView; label: string }> = [
   { id: "price", label: "Price & context" },
   { id: "chad", label: "Chad wallets" },
+  { id: "coin-age", label: "Coin age" },
   { id: "soulbound", label: "Soulbound wallets" },
   { id: "wallet-count", label: "Wallet count" },
   { id: "holder-distribution", label: "Holder distribution" },
@@ -72,6 +75,7 @@ async function fetchBundle<T>(name: string): Promise<T> {
 function useDashboardData() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [coinAgeError, setCoinAgeError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +90,15 @@ function useDashboardData() {
       fetchBundle<DatasetDetailsBundle>("dataset-details"),
     ])
       .then(([metadata, price, priceContext, chad, soulbound, holderBuckets, walletVerification, datasetDetails]) => {
-        if (!cancelled) setData({ metadata, price, priceContext, chad, soulbound, holderBuckets, walletVerification, datasetDetails });
+        if (cancelled) return;
+        setData({ metadata, price, priceContext, chad, coinAge: null, soulbound, holderBuckets, walletVerification, datasetDetails });
+        fetchBundle<CoinAgeBundle>("coin-age")
+          .then((coinAge) => {
+            if (!cancelled) setData((current) => current ? { ...current, coinAge } : current);
+          })
+          .catch((err) => {
+            if (!cancelled) setCoinAgeError(err instanceof Error ? err.message : "Could not load coin age data");
+          });
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load dashboard data");
@@ -96,7 +108,7 @@ function useDashboardData() {
     };
   }, []);
 
-  return { data, error };
+  return { data, error, coinAgeError };
 }
 
 function useIsMobile(breakpoint = 640) {
@@ -120,6 +132,22 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="metric-value">{value}</div>
     </div>
   );
+}
+
+function MetricWithDetail({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div className="metric metric-with-detail">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-detail">{detail}</div>
+    </div>
+  );
+}
+
+function fmtTibbirCompact(value: number) {
+  if (Math.abs(value) >= 1_000_000) return `${fmtNumber(value / 1_000_000, 1)}M TIBBIR`;
+  if (Math.abs(value) >= 1_000) return `${fmtNumber(value / 1_000, 1)}k TIBBIR`;
+  return `${fmtNumber(value, 0)} TIBBIR`;
 }
 
 function bucketColor(label: string) {
@@ -677,6 +705,114 @@ function SoulboundWallets({ soulbound, contract, circulatingSupply }: { soulboun
   );
 }
 
+function CoinAge({ coinAge, contract }: { coinAge: CoinAgeBundle; contract: string }) {
+  const summary = coinAge.summary;
+  const overallData: Data[] = [{
+    x: coinAge.history.map((row) => row.weekStart),
+    y: coinAge.history.map((row) => row.avgCoinAgeDays),
+    type: "scatter",
+    mode: "lines",
+    name: "Avg coin age",
+    line: { color: "#a7df00", width: 2 },
+    connectgaps: false,
+    hovertemplate: "%{x|%b %d, %Y}<br>%{y:,.1f} days<extra></extra>",
+  }];
+  const bucketData: Data[] = coinAge.buckets.map((bucket) => {
+    const rows = coinAge.bucketHistory.filter((row) => row.bucket === bucket.label);
+    return {
+      x: rows.map((row) => row.weekStart),
+      y: rows.map((row) => row.avgCoinAgeDays),
+      type: "scatter",
+      mode: "lines",
+      name: bucket.label,
+      line: { color: bucketColor(bucket.label), width: 2 },
+      connectgaps: false,
+      hovertemplate: "%{x|%b %d, %Y}<br>%{y:,.1f} days<extra>" + bucket.label + "</extra>",
+    };
+  });
+
+  return (
+    <section className="section" id="coin-age">
+      <h2>Coin age</h2>
+      <div className="metric-grid coin-age-metric-grid">
+        <MetricWithDetail
+          label="Avg coin age"
+          value={`${fmtNumber(summary.avgCoinAgeDays)} days`}
+          detail={summary.latestWeekStart ? `Latest completed week: ${summary.latestWeekStart}` : "No completed week"}
+        />
+        <MetricWithDetail
+          label="Included supply"
+          value={fmtPct(summary.includedSupplyPct, 2)}
+          detail={`${fmtTibbirCompact(summary.includedBalance)} across ${fmtNumber(summary.includedWallets)} wallets`}
+        />
+        <MetricWithDetail
+          label="Excluded supply"
+          value={fmtPct(summary.excludedSupplyPct, 2)}
+          detail={`${fmtTibbirCompact(summary.excludedBalance)} across ${fmtNumber(summary.excludedWallets)} wallets`}
+        />
+        <MetricWithDetail
+          label="Included wallets"
+          value={fmtNumber(summary.includedWallets)}
+          detail={`${fmtNumber(summary.latestSnapshotWallets)} wallets in latest weekly snapshot`}
+        />
+      </div>
+      <InfoTooltip text="- Coin age is balance-weighted days held: sum(token amount x days held) / included balance.\n- Weekly chart data comes from validated wallet-event replay snapshots.\n- Supply coverage is measured against circulating supply using current wallet balances.\n- Excluded wallets are high-activity exchange-style wallets omitted from coin age; burn/dead rows remain in the audit table but not in excluded circulating supply." />
+      <h3>Overall avg coin age</h3>
+      <Plot
+        data={overallData}
+        layout={{ height: 400, hovermode: "x unified", showlegend: false, yaxis: { ticksuffix: "d" } as Partial<Layout["yaxis"]> }}
+      />
+      <h3>Avg coin age by holder bucket</h3>
+      <Plot
+        data={bucketData}
+        layout={{ height: 400, hovermode: "x unified", yaxis: { ticksuffix: "d" } as Partial<Layout["yaxis"]> }}
+      />
+      <details className="details">
+        <summary>Excluded wallets</summary>
+        <div className="details-body">
+          <WalletSearchTable
+            rows={coinAge.excludedWallets}
+            contract={contract}
+            columns={["Wallet", "BaseScan", "Balance", "% of supply", "Tx in", "Tx out", "Reason"]}
+            defaultSort={{ column: "Balance", direction: "desc" }}
+            rowMapper={(row) => ({
+              Wallet: shortAddress(String(row.address)),
+              BaseScan: <a href={basescanTokenUrl(contract, String(row.address))} target="_blank">open</a>,
+              Balance: fmtNumber(Number(row.balance)),
+              "% of supply": fmtPct(Number(row.supplySharePct), 2),
+              "Tx in": fmtNumber(Number(row.tx_in)),
+              "Tx out": fmtNumber(Number(row.tx_out)),
+              Reason: String(row.reason),
+            })}
+            searchKey="address"
+            sortAccessors={{
+              Wallet: (row) => String(row.address),
+              Balance: (row) => Number(row.balance),
+              "% of supply": (row) => Number(row.supplySharePct),
+              "Tx in": (row) => Number(row.tx_in),
+              "Tx out": (row) => Number(row.tx_out),
+              Reason: (row) => String(row.reason),
+            }}
+          />
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function CoinAgeStatus({ error }: { error: string | null }) {
+  return (
+    <section className="section" id="coin-age">
+      <h2>Coin age</h2>
+      <div className="status">
+        {error
+          ? "Coin age data has not been published yet. Run the dashboard bundle job to create dashboard/coin-age.json."
+          : "Loading coin age..."}
+      </div>
+    </section>
+  );
+}
+
 function HolderBuckets({ holderBuckets, view }: { holderBuckets: HolderBucketsBundle; view: Extract<DashboardView, "wallet-count" | "holder-distribution" | "wallets-vs-supply"> }) {
   const labels = holderBuckets.buckets.map((bucket) => bucket.label);
   const [visibleBuckets, setVisibleBuckets] = useState(() => new Set(labels));
@@ -864,7 +1000,7 @@ function DashboardLoader() {
 }
 
 export function DashboardApp() {
-  const { data, error } = useDashboardData();
+  const { data, error, coinAgeError } = useDashboardData();
   const [activeView, setActiveView] = useState<DashboardView>("price");
   if (error) return <main className="page"><div className="status">{error}</div></main>;
   if (!data) return <DashboardLoader />;
@@ -890,6 +1026,11 @@ export function DashboardApp() {
       <ChartNavigation activeView={activeView} onChange={setActiveView} />
       {activeView === "price" && <PriceStory price={data.price} context={data.priceContext} />}
       {activeView === "chad" && <ChadWallets chad={data.chad} contract={data.metadata.contractAddress} circulatingSupply={circulatingSupply} />}
+      {activeView === "coin-age" && (
+        data.coinAge
+          ? <CoinAge coinAge={data.coinAge} contract={data.metadata.contractAddress} />
+          : <CoinAgeStatus error={coinAgeError} />
+      )}
       {activeView === "soulbound" && <SoulboundWallets soulbound={data.soulbound} contract={data.metadata.contractAddress} circulatingSupply={circulatingSupply} />}
       {(activeView === "wallet-count" || activeView === "holder-distribution" || activeView === "wallets-vs-supply") && (
         <HolderBuckets holderBuckets={data.holderBuckets} view={activeView} />

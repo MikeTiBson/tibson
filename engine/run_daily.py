@@ -33,14 +33,14 @@ print(build_wallet_snapshot())
 print("=== build_wallet_activity ===")
 print(build_wallet_activity())
 
-print("=== update_coin_age_snapshots ===")
-print(update_coin_age_snapshots())
-
 print("=== build_wallet_events ===")
 print(build_wallet_events())
 
 print("=== build_wallet_summary ===")
 print(build_wallet_summary())
+
+print("=== update_coin_age_snapshots ===")
+print(update_coin_age_snapshots())
 
 print("=== update_price_history ===")
 print(update_price_history())

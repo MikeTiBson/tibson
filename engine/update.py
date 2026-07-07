@@ -20,7 +20,8 @@ from analytics.snapshot import (
     build_daily_bucket_breakdown,
     apply_transfers_to_snapshot,
 )
-from analytics.coin_age import build_weekly_snapshots, project_snapshots_forward
+from analytics.coin_age import build_snapshots_from_wallet_events, build_weekly_snapshots, project_snapshots_forward
+from analytics.coin_age_dashboard import build_coin_age_dashboard_bundle, validate_coin_age_snapshots
 from analytics.wallet import (
     build_wallet_events as _build_wallet_events,
     build_wallet_summary as _build_wallet_summary,
@@ -1336,53 +1337,48 @@ def _record_coin_age_snapshot_metadata(snapshots, wrote_snapshot):
 
 def rebuild_coin_age_snapshots():
     """
-    Full rebuild of per-wallet weekly coin age snapshots from the master ledger.
+    Full rebuild of per-wallet weekly coin age snapshots from wallet events.
 
     Excludes high-activity wallets (likely exchanges / LPs) where both
     tx_in and tx_out exceed the exchange threshold.
 
-    Runtime: ~12 minutes for ~100k wallets.
-
     Returns:
         str: Status message
     """
-    print("Loading transfers and wallet activity...")
-    transfers = _read_parquet(config.MASTER_FILE)
+    print("Loading wallet events and wallet activity...")
+    wallet_events = _read_parquet(config.WALLET_EVENTS_FILE)
     wa        = _read_parquet(config.WALLET_ACTIVITY_FILE)
+    wallet_events["address"] = wallet_events["address"].astype(str).str.lower()
+    wa["address"] = wa["address"].astype(str).str.lower()
 
     excluded = (
         ((wa["tx_in"] > _EXCHANGE_TX_THRESHOLD) & (wa["tx_out"] > _EXCHANGE_TX_THRESHOLD)) |
         (wa["address"] == _BURN_ADDRESS)
     )
     wallets  = wa[~excluded]["address"].tolist()
-    print(f"Wallets to process: {len(wallets):,}  (excluded {excluded.sum():,} exchanges/LPs)")
+    as_of = pd.to_datetime(wallet_events["timestamp"], utc=True).max()
+    print(f"Wallets to process: {len(wallets):,}  (excluded {excluded.sum():,} exchanges/LPs/burn)")
+    print(f"Ledger watermark: {as_of.isoformat()}")
 
-    # Pre-index transfers by address for O(1) lookup
-    addr_col = pd.concat([
-        transfers["to_address"].rename("address"),
-        transfers["from_address"].rename("address"),
-    ]).reset_index().rename(columns={"index": "row_idx"})
-    addr_to_idx = addr_col.groupby("address")["row_idx"].apply(list)
-
-    results = []
-    skipped = 0
     t0 = time.time()
+    all_snapshots = build_snapshots_from_wallet_events(wallet_events, addresses=wallets, as_of=as_of)
+    if all_snapshots.empty:
+        raise RuntimeError("Coin age snapshot rebuild produced no rows.")
+    all_snapshots = (
+        all_snapshots
+        .drop_duplicates(subset=["address", "week_start"], keep="last")
+        .sort_values(["week_start", "address"])
+        .reset_index(drop=True)
+    )
 
-    for i, addr in enumerate(wallets):
-        if addr not in addr_to_idx:
-            skipped += 1
-            continue
-        snap = build_weekly_snapshots(addr, transfers.loc[addr_to_idx[addr]])
-        if not snap.empty:
-            results.append(snap)
-
-        if (i + 1) % 1000 == 0:
-            elapsed   = time.time() - t0
-            rate      = (i + 1) / elapsed
-            remaining = (len(wallets) - i - 1) / rate / 60
-            print(f"  {i+1:,}/{len(wallets):,}  |  {elapsed/60:.1f} min elapsed  |  ~{remaining:.0f} min remaining")
-
-    all_snapshots = pd.concat(results, ignore_index=True)
+    metadata = _read_json(config.METADATA_FILE)
+    validate_coin_age_snapshots(
+        all_snapshots,
+        wa,
+        wallet_events,
+        metadata,
+        exchange_tx_threshold=_EXCHANGE_TX_THRESHOLD,
+    )
     _write_parquet(all_snapshots, config.COIN_AGE_SNAPSHOTS_FILE)
     _record_coin_age_snapshot_metadata(all_snapshots, wrote_snapshot=True)
 
@@ -1390,7 +1386,7 @@ def rebuild_coin_age_snapshots():
     return (
         f"Rebuilt coin age snapshots in {elapsed/60:.1f} min. "
         f"{len(all_snapshots):,} rows across {all_snapshots['address'].nunique():,} wallets. "
-        f"Skipped {skipped:,}."
+        f"Latest week {pd.to_datetime(all_snapshots['week_start']).dt.date.max()}."
     )
 
 
@@ -1494,6 +1490,17 @@ def update_coin_age_snapshots():
         f"Rebuilt {len(active_addrs):,} wallets, projected {len(inactive_addrs):,}. "
         f"Total rows: {len(result):,}."
     )
+
+
+def update_coin_age_snapshots():
+    """
+    Correctness-first coin age update.
+
+    The previous incremental path could keep stale projected rows and duplicate
+    wallet/week rows. Until a range-replacement updater is added, updates use a
+    full wallet-event replay so the dashboard never publishes polluted snapshots.
+    """
+    return rebuild_coin_age_snapshots()
 
 
 # =====================================================
@@ -1726,6 +1733,9 @@ def build_dashboard_bundles():
     bucket_breakdown = _read_parquet(config.DAILY_BUCKET_BREAKDOWN_FILE)
     snapshot = _read_parquet(config.WALLET_SNAPSHOT_FILE)
     recent_transfers = _read_parquet(config.RECENT_TRANSFERS_FILE)
+    coin_age_snapshots = _read_parquet(config.COIN_AGE_SNAPSHOTS_FILE)
+    wallet_activity = _read_parquet(config.WALLET_ACTIVITY_FILE)
+    wallet_events = _read_parquet(config.WALLET_EVENTS_FILE)
     chad_cohorts = _read_parquet(config.CHAD_COHORTS_FILE)
     chad_wallets = _read_parquet(config.CHAD_WALLETS_FILE)
     soulbound_supply = _read_parquet(config.SOULBOUND_HOLDER_SUPPLY_FILE)
@@ -1783,6 +1793,14 @@ def build_dashboard_bundles():
 
     price_context = _read_repo_json("data/price_context_events.json")
 
+    validate_coin_age_snapshots(
+        coin_age_snapshots,
+        wallet_activity,
+        wallet_events,
+        metadata,
+        exchange_tx_threshold=_EXCHANGE_TX_THRESHOLD,
+    )
+
     bundles = {
         "metadata": {
             "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -1827,6 +1845,12 @@ def build_dashboard_bundles():
             "walletCountHistory": _df_records(holder_growth),
             "holderDistributionHistory": _df_records(bucket_breakdown),
         },
+        "coin-age": build_coin_age_dashboard_bundle(
+            coin_age_snapshots,
+            wallet_activity,
+            metadata,
+            exchange_tx_threshold=_EXCHANGE_TX_THRESHOLD,
+        ),
         "wallet-verification": {
             "walletSnapshot": _df_records(snapshot[[address_col, "balance"]].rename(columns={address_col: "address"})),
             "recentTransactions": _df_records(recent_transfers.tail(100)),

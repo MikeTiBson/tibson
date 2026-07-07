@@ -11,6 +11,7 @@ const ALLOWED_BUNDLES = new Set<BundleName>([
   "chad",
   "soulbound",
   "holder-buckets",
+  "coin-age",
   "wallet-verification",
   "dataset-details",
   "metric-example",

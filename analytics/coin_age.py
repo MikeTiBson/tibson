@@ -111,6 +111,181 @@ def build_weekly_snapshots(address: str, transfers_df: pd.DataFrame, decimals: i
     return pd.DataFrame(snapshots)
 
 
+def _latest_completed_week_start(as_of) -> date:
+    return (_floor_to_monday(as_of) - timedelta(weeks=1)).date()
+
+
+def _event_log_index(event_id):
+    return str(event_id).rsplit(":", 1)[-1]
+
+
+def build_weekly_snapshots_from_wallet_events(address: str, wallet_events_df: pd.DataFrame, as_of=None) -> pd.DataFrame:
+    """
+    Build weekly coin age snapshots for one wallet from wallet-centric events.
+
+    The final row is the latest completed Monday-to-Monday week supported by
+    the ledger watermark, not wall-clock now.
+    """
+    addr = str(address).lower()
+    df = wallet_events_df[wallet_events_df["address"].astype(str).str.lower() == addr].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+
+    df["_ts"] = pd.to_datetime(df["timestamp"], utc=True)
+    as_of_ts = pd.to_datetime(as_of, utc=True) if as_of is not None else df["_ts"].max()
+    df = df[df["_ts"] <= as_of_ts].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+
+    if "event_id" in df.columns:
+        df["_log_index"] = df["event_id"].map(_event_log_index).astype(int)
+    else:
+        df["_log_index"] = 0
+    df = df.sort_values(["_ts", "block_number", "_log_index"]).reset_index(drop=True)
+
+    latest_week_start = _latest_completed_week_start(as_of_ts)
+    latest_boundary = pd.Timestamp(latest_week_start, tz="UTC") + pd.Timedelta(weeks=1)
+
+    state = WalletState()
+    current = df["_ts"].iloc[0]
+    next_boundary = _floor_to_monday(current) + timedelta(weeks=1)
+    snapshots = []
+
+    for _, row in df.iterrows():
+        ts = row["_ts"]
+        amount = float(row["amount"])
+
+        while next_boundary <= ts and next_boundary <= latest_boundary:
+            delta = (next_boundary - current).total_seconds() / 86400
+            state.apply_time(delta)
+            snapshots.append({
+                "address": addr,
+                "week_start": (next_boundary - timedelta(weeks=1)).date(),
+                "balance": state.balance,
+                "avg_age": state.avg_age(),
+                "tx_in_total": state.tx_in_total,
+                "tx_out_total": state.tx_out_total,
+            })
+            current = next_boundary
+            next_boundary += timedelta(weeks=1)
+
+        if ts > latest_boundary:
+            break
+
+        delta = (ts - current).total_seconds() / 86400
+        state.apply_time(delta)
+        current = ts
+
+        if row["direction"] == "in":
+            state.apply_incoming(amount)
+        else:
+            state.apply_outgoing(amount)
+
+    while next_boundary <= latest_boundary:
+        delta = (next_boundary - current).total_seconds() / 86400
+        state.apply_time(delta)
+        snapshots.append({
+            "address": addr,
+            "week_start": (next_boundary - timedelta(weeks=1)).date(),
+            "balance": state.balance,
+            "avg_age": state.avg_age(),
+            "tx_in_total": state.tx_in_total,
+            "tx_out_total": state.tx_out_total,
+        })
+        current = next_boundary
+        next_boundary += timedelta(weeks=1)
+
+    return pd.DataFrame(snapshots)
+
+
+def _snapshots_from_prepared_wallet_events(addr: str, group: pd.DataFrame, latest_boundary) -> list[dict]:
+    state = WalletState()
+    current = group["ts"].iloc[0]
+    next_boundary = _floor_to_monday(current) + timedelta(weeks=1)
+    snapshots = []
+
+    for row in group.itertuples(index=False):
+        ts = row.ts
+        amount = float(row.amount)
+
+        while next_boundary <= ts and next_boundary <= latest_boundary:
+            delta = (next_boundary - current).total_seconds() / 86400
+            state.apply_time(delta)
+            snapshots.append({
+                "address": addr,
+                "week_start": (next_boundary - timedelta(weeks=1)).date(),
+                "balance": state.balance,
+                "avg_age": state.avg_age(),
+                "tx_in_total": state.tx_in_total,
+                "tx_out_total": state.tx_out_total,
+            })
+            current = next_boundary
+            next_boundary += timedelta(weeks=1)
+
+        if ts > latest_boundary:
+            break
+
+        delta = (ts - current).total_seconds() / 86400
+        state.apply_time(delta)
+        current = ts
+
+        if row.direction == "in":
+            state.apply_incoming(amount)
+        else:
+            state.apply_outgoing(amount)
+
+    while next_boundary <= latest_boundary:
+        delta = (next_boundary - current).total_seconds() / 86400
+        state.apply_time(delta)
+        snapshots.append({
+            "address": addr,
+            "week_start": (next_boundary - timedelta(weeks=1)).date(),
+            "balance": state.balance,
+            "avg_age": state.avg_age(),
+            "tx_in_total": state.tx_in_total,
+            "tx_out_total": state.tx_out_total,
+        })
+        current = next_boundary
+        next_boundary += timedelta(weeks=1)
+
+    return snapshots
+
+
+def build_snapshots_from_wallet_events(wallet_events_df: pd.DataFrame, addresses=None, as_of=None) -> pd.DataFrame:
+    if wallet_events_df is None or wallet_events_df.empty:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+
+    events = wallet_events_df.copy()
+    events["address"] = events["address"].astype(str).str.lower()
+    if addresses is not None:
+        wanted = {str(addr).lower() for addr in addresses}
+        events = events[events["address"].isin(wanted)].copy()
+    if events.empty:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+
+    as_of_ts = pd.to_datetime(as_of, utc=True) if as_of is not None else pd.to_datetime(events["timestamp"], utc=True).max()
+    latest_week_start = _latest_completed_week_start(as_of_ts)
+    latest_boundary = pd.Timestamp(latest_week_start, tz="UTC") + pd.Timedelta(weeks=1)
+    events["ts"] = pd.to_datetime(events["timestamp"], utc=True)
+    events = events[events["ts"] <= latest_boundary].copy()
+    if events.empty:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+    events["amount"] = pd.to_numeric(events["amount"], errors="coerce").fillna(0.0)
+    if "event_id" in events.columns:
+        events["_log_index"] = events["event_id"].map(_event_log_index).astype(int)
+    else:
+        events["_log_index"] = 0
+    events = events.sort_values(["address", "ts", "block_number", "_log_index"])
+
+    rows = []
+    for address, group in events.groupby("address", sort=False):
+        rows.extend(_snapshots_from_prepared_wallet_events(address, group, latest_boundary))
+
+    if not rows:
+        return pd.DataFrame(columns=["address", "week_start", "balance", "avg_age", "tx_in_total", "tx_out_total"])
+    return pd.DataFrame(rows)
+
+
 def project_snapshots_forward(last_rows: pd.DataFrame, up_to_week: date) -> pd.DataFrame:
     """
     Extend snapshots for wallets that had no new transfers by advancing time.
