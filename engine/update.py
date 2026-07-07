@@ -230,7 +230,7 @@ def _topic_to_address(topic):
 
 def _block_timestamp_iso(block):
     timestamp = _hex_to_int(block["timestamp"])
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 # =====================================================
@@ -976,7 +976,7 @@ def update_transfers():
     metadata["end_block"] = max_block_after
     metadata["transfer_count"] = int(len(master))
     metadata["last_updated_utc"] = datetime.now(timezone.utc).isoformat()
-    ts = pd.to_datetime(master["timestamp"]).sort_values()
+    ts = pd.to_datetime(master["timestamp"], format="mixed", utc=True).sort_values()
     metadata["first_transfer_utc"] = ts.iloc[0].isoformat() if len(ts) > 0 else None
     metadata["last_transfer_utc"] = ts.iloc[-1].isoformat() if len(ts) > 0 else None
 

@@ -90,6 +90,11 @@ class AlchemyResilienceTests(unittest.TestCase):
             "asset": "TIBBIR",
         }])
 
+    def test_block_timestamp_matches_existing_fractional_iso_shape(self):
+        block = {"timestamp": hex(1720368000)}
+
+        self.assertEqual(update._block_timestamp_iso(block), "2024-07-07T16:00:00.000000Z")
+
 
 if __name__ == "__main__":
     unittest.main()
