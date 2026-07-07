@@ -41,9 +41,13 @@ _ALCHEMY_MAX_RETRIES = int(os.environ.get("ALCHEMY_MAX_RETRIES", "6"))
 _ALCHEMY_TIMEOUT_SECONDS = int(os.environ.get("ALCHEMY_TIMEOUT_SECONDS", "30"))
 _ALCHEMY_RATE_LIMIT_BASE_DELAY_SECONDS = float(os.environ.get("ALCHEMY_RATE_LIMIT_BASE_DELAY_SECONDS", "30"))
 _ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS = float(os.environ.get("ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS", "180"))
-_ALCHEMY_TRANSFER_BLOCK_SPAN = int(os.environ.get("ALCHEMY_TRANSFER_BLOCK_SPAN", "500"))
-_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS", "2.0"))
+_TRANSFER_FETCH_MODE = os.environ.get("TRANSFER_FETCH_MODE", "eth_getLogs").strip()
+_DEFAULT_TRANSFER_BLOCK_SPAN = "10" if _TRANSFER_FETCH_MODE == "eth_getLogs" else "500"
+_DEFAULT_TRANSFER_CHUNK_SLEEP_SECONDS = "0.1" if _TRANSFER_FETCH_MODE == "eth_getLogs" else "2.0"
+_ALCHEMY_TRANSFER_BLOCK_SPAN = int(os.environ.get("ALCHEMY_TRANSFER_BLOCK_SPAN", _DEFAULT_TRANSFER_BLOCK_SPAN))
+_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS", _DEFAULT_TRANSFER_CHUNK_SLEEP_SECONDS))
 _ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS", "1.0"))
+_ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 
 # =====================================================
@@ -167,6 +171,12 @@ def _post_alchemy_json(url, payload, headers=None, context="Alchemy request"):
         last_response = response
 
         if response.status_code not in _ALCHEMY_RETRY_STATUSES:
+            if not response.ok:
+                try:
+                    error_body = response.json()
+                except ValueError:
+                    error_body = response.text[:500]
+                raise RuntimeError(f"{context} failed: HTTP {response.status_code} {error_body}")
             response.raise_for_status()
             return response.json()
 
@@ -210,6 +220,17 @@ def _hex_to_int(x):
     if isinstance(x, str) and x.startswith("0x"):
         return int(x, 16)
     return int(x)
+
+
+def _topic_to_address(topic):
+    if not topic:
+        return ""
+    return f"0x{str(topic)[-40:]}".lower()
+
+
+def _block_timestamp_iso(block):
+    timestamp = _hex_to_int(block["timestamp"])
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # =====================================================
@@ -708,6 +729,142 @@ def _iter_block_ranges(start_block, end_block, max_span=None):
         current = chunk_end + 1
 
 
+def _transfer_rows_from_alchemy_transfers(transfers):
+    rows = []
+    for t in transfers:
+        raw = t.get("rawContract") or {}
+        raw_value = _hex_to_int(raw.get("value"))
+        decimals = _hex_to_int(raw.get("decimal"))
+
+        rows.append({
+            "event_id": t.get("uniqueId"),
+            "block_number": _hex_to_int(t.get("blockNum")),
+            "timestamp": (t.get("metadata") or {}).get("blockTimestamp"),
+            "tx_hash": t.get("hash"),
+            "from_address": (t.get("from") or "").lower(),
+            "to_address": (t.get("to") or "").lower(),
+            "raw_amount": str(raw_value) if raw_value is not None else "",
+            "decimals": decimals,
+            "amount": None,  # Will be NaN in pandas (float64 compatible)
+            "contract_address": (raw.get("address") or config.CONTRACT_ADDRESS).lower(),
+            "category": t.get("category"),
+            "asset": t.get("asset")
+        })
+    return rows
+
+
+def _fetch_alchemy_transfer_rows(chunk_start, chunk_end):
+    page_key = None
+    rows = []
+
+    while True:
+        params = {
+            "fromBlock": hex(chunk_start),
+            "toBlock": hex(chunk_end),
+            "contractAddresses": [config.CONTRACT_ADDRESS],
+            "category": ["erc20"],
+            "maxCount": config.MAX_COUNT_HEX,
+            "withMetadata": True
+        }
+
+        if page_key:
+            params["pageKey"] = page_key
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "alchemy_getAssetTransfers",
+            "params": [params]
+        }
+
+        data = _post_alchemy_json(
+            _alchemy_rpc_url(),
+            payload,
+            context=f"Alchemy transfers {chunk_start}->{chunk_end}",
+        )
+
+        if "error" in data:
+            raise Exception(data["error"])
+
+        result = data["result"]
+        transfers = result.get("transfers", [])
+        rows.extend(_transfer_rows_from_alchemy_transfers(transfers))
+        page_key = result.get("pageKey")
+
+        if not page_key:
+            return rows
+
+        time.sleep(_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS)
+
+
+def _fetch_block_timestamps(block_numbers, cache):
+    missing = [block for block in sorted(set(block_numbers)) if block not in cache]
+    for block_number in missing:
+        block = _rpc_call("eth_getBlockByNumber", [hex(block_number), False])
+        cache[block_number] = _block_timestamp_iso(block)
+    return cache
+
+
+def _transfer_rows_from_logs(logs, timestamp_cache):
+    block_numbers = [_hex_to_int(log.get("blockNumber")) for log in logs]
+    _fetch_block_timestamps(block_numbers, timestamp_cache)
+
+    rows = []
+    for log in logs:
+        topics = log.get("topics") or []
+        if len(topics) < 3:
+            continue
+
+        block_number = _hex_to_int(log.get("blockNumber"))
+        log_index = _hex_to_int(log.get("logIndex"))
+        raw_value = _hex_to_int(log.get("data"))
+        tx_hash = log.get("transactionHash")
+
+        rows.append({
+            "event_id": f"{tx_hash}:{log_index}",
+            "block_number": block_number,
+            "timestamp": timestamp_cache[block_number],
+            "tx_hash": tx_hash,
+            "from_address": _topic_to_address(topics[1]),
+            "to_address": _topic_to_address(topics[2]),
+            "raw_amount": str(raw_value) if raw_value is not None else "",
+            "decimals": 18,
+            "amount": None,  # Will be NaN in pandas (float64 compatible)
+            "contract_address": (log.get("address") or config.CONTRACT_ADDRESS).lower(),
+            "category": "erc20",
+            "asset": "TIBBIR",
+        })
+
+    return rows
+
+
+def _fetch_log_transfer_rows(chunk_start, chunk_end, timestamp_cache):
+    params = [{
+        "fromBlock": hex(chunk_start),
+        "toBlock": hex(chunk_end),
+        "address": config.CONTRACT_ADDRESS,
+        "topics": [_ERC20_TRANSFER_TOPIC],
+    }]
+    logs = _rpc_call("eth_getLogs", params)
+    logs = sorted(
+        logs,
+        key=lambda log: (
+            _hex_to_int(log.get("blockNumber")),
+            _hex_to_int(log.get("transactionIndex")),
+            _hex_to_int(log.get("logIndex")),
+        ),
+    )
+    return _transfer_rows_from_logs(logs, timestamp_cache)
+
+
+def _fetch_transfer_rows(chunk_start, chunk_end, timestamp_cache):
+    if _TRANSFER_FETCH_MODE == "alchemy_getAssetTransfers":
+        return _fetch_alchemy_transfer_rows(chunk_start, chunk_end)
+    if _TRANSFER_FETCH_MODE != "eth_getLogs":
+        raise ValueError(f"Unsupported TRANSFER_FETCH_MODE: {_TRANSFER_FETCH_MODE}")
+    return _fetch_log_transfer_rows(chunk_start, chunk_end, timestamp_cache)
+
+
 def update_transfers():
     """
     Fetch new transfers from the blockchain and update the master Parquet file.
@@ -736,73 +893,16 @@ def update_transfers():
     # Fetch transfers
     new_rows = []
     total_fetched = 0
+    timestamp_cache = {}
 
     for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_block_ranges(start_block, safe_head)):
         if chunk_index > 0:
             time.sleep(_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS)
         print("Transfer chunk:", chunk_start, "->", chunk_end)
-        page_key = None
-
-        while True:
-            params = {
-                "fromBlock": hex(chunk_start),
-                "toBlock": hex(chunk_end),
-                "contractAddresses": [config.CONTRACT_ADDRESS],
-                "category": ["erc20"],
-                "maxCount": config.MAX_COUNT_HEX,
-                "withMetadata": True
-            }
-
-            if page_key:
-                params["pageKey"] = page_key
-
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "alchemy_getAssetTransfers",
-                "params": [params]
-            }
-
-            data = _post_alchemy_json(
-                _alchemy_rpc_url(),
-                payload,
-                context=f"Alchemy transfers {chunk_start}->{chunk_end}",
-            )
-
-            if "error" in data:
-                raise Exception(data["error"])
-
-            result = data["result"]
-            transfers = result.get("transfers", [])
-            page_key = result.get("pageKey")
-
-            for t in transfers:
-                raw = t.get("rawContract") or {}
-                raw_value = _hex_to_int(raw.get("value"))
-                decimals = _hex_to_int(raw.get("decimal"))
-
-                new_rows.append({
-                    "event_id": t.get("uniqueId"),
-                    "block_number": _hex_to_int(t.get("blockNum")),
-                    "timestamp": (t.get("metadata") or {}).get("blockTimestamp"),
-                    "tx_hash": t.get("hash"),
-                    "from_address": (t.get("from") or "").lower(),
-                    "to_address": (t.get("to") or "").lower(),
-                    "raw_amount": str(raw_value) if raw_value is not None else "",
-                    "decimals": decimals,
-                    "amount": None,  # Will be NaN in pandas (float64 compatible)
-                    "contract_address": (raw.get("address") or config.CONTRACT_ADDRESS).lower(),
-                    "category": t.get("category"),
-                    "asset": t.get("asset")
-                })
-
-            total_fetched += len(transfers)
-            print("Fetched:", total_fetched)
-
-            if not page_key:
-                break
-
-            time.sleep(_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS)
+        chunk_rows = _fetch_transfer_rows(chunk_start, chunk_end, timestamp_cache)
+        new_rows.extend(chunk_rows)
+        total_fetched += len(chunk_rows)
+        print("Fetched:", total_fetched)
 
     print("Total new transfers fetched:", total_fetched)
 
