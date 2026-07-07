@@ -43,6 +43,14 @@ class AlchemyResilienceTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         sleep.assert_called_once_with(0.01)
 
+    def test_rate_limit_backoff_uses_slower_default_without_retry_after(self):
+        response = FakeResponse(429)
+
+        self.assertEqual(update._retry_delay(response, 0), 30.0)
+        self.assertEqual(update._retry_delay(response, 1), 60.0)
+        self.assertEqual(update._retry_delay(response, 2), 120.0)
+        self.assertEqual(update._retry_delay(response, 3), 180.0)
+
 
 if __name__ == "__main__":
     unittest.main()

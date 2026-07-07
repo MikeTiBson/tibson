@@ -39,8 +39,11 @@ from analytics.chads import (
 _ALCHEMY_RETRY_STATUSES = {429, 500, 502, 503, 504}
 _ALCHEMY_MAX_RETRIES = int(os.environ.get("ALCHEMY_MAX_RETRIES", "6"))
 _ALCHEMY_TIMEOUT_SECONDS = int(os.environ.get("ALCHEMY_TIMEOUT_SECONDS", "30"))
-_ALCHEMY_TRANSFER_BLOCK_SPAN = int(os.environ.get("ALCHEMY_TRANSFER_BLOCK_SPAN", "2000"))
-_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS", "0.2"))
+_ALCHEMY_RATE_LIMIT_BASE_DELAY_SECONDS = float(os.environ.get("ALCHEMY_RATE_LIMIT_BASE_DELAY_SECONDS", "30"))
+_ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS = float(os.environ.get("ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS", "180"))
+_ALCHEMY_TRANSFER_BLOCK_SPAN = int(os.environ.get("ALCHEMY_TRANSFER_BLOCK_SPAN", "500"))
+_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS", "2.0"))
+_ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS = float(os.environ.get("ALCHEMY_TRANSFER_PAGE_SLEEP_SECONDS", "1.0"))
 
 
 # =====================================================
@@ -126,9 +129,14 @@ def _retry_delay(response, attempt):
     retry_after = response.headers.get("Retry-After") if response is not None else None
     if retry_after:
         try:
-            return min(float(retry_after), 60.0)
+            return min(float(retry_after), _ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS)
         except ValueError:
             pass
+    if response is not None and response.status_code == 429:
+        return min(
+            _ALCHEMY_RATE_LIMIT_BASE_DELAY_SECONDS * (2 ** attempt),
+            _ALCHEMY_RATE_LIMIT_MAX_DELAY_SECONDS,
+        )
     return min(2 ** attempt, 60.0)
 
 
@@ -729,7 +737,9 @@ def update_transfers():
     new_rows = []
     total_fetched = 0
 
-    for chunk_start, chunk_end in _iter_block_ranges(start_block, safe_head):
+    for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_block_ranges(start_block, safe_head)):
+        if chunk_index > 0:
+            time.sleep(_ALCHEMY_TRANSFER_CHUNK_SLEEP_SECONDS)
         print("Transfer chunk:", chunk_start, "->", chunk_end)
         page_key = None
 
